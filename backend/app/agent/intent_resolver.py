@@ -16,10 +16,12 @@ class IntentResolver:
     def detect_language(text: str) -> str:
         """Lightweight on-device compatible language identification for the MVP."""
         lower = text.lower()
-        if any(token in lower for token in ("hello", "please", "call ", "open ", "send ")):
+        if any(token in lower for token in (
+            "hello", "please", "call ", "phone ", "open ", "send ", "text ",
+            "search ", "navigate ", "remind ", "read my ", "create ", "add ",
+            "directions ", "read the ", "tap ",
+        )):
             return "en"
-        # The supported MVP language is French; unrecognised utterances stay in
-        # French and can be clarified rather than silently sent to a cloud model.
         return "fr"
 
     @staticmethod
@@ -32,7 +34,10 @@ class IntentResolver:
             return []
 
         cleaned_text = text.strip()
-        language = IntentResolver.detect_language(cleaned_text)
+        requested_language = (context or {}).get("language")
+        language = requested_language if requested_language in {"en", "fr"} else (
+            IntentResolver.detect_language(cleaned_text)
+        )
         results: List[IntentResult] = []
 
         # Check for multi-intent connector: "puis", "ensuite", "et après"
@@ -51,22 +56,44 @@ class IntentResolver:
     def _resolve_single(text: str, context: Optional[Dict[str, Any]] = None) -> IntentResult:
         lower = text.lower()
 
+        reminder_match = re.search(
+            r"\b(?:rappelle-moi|rappel|alarme|souviens-toi|remind me|set a reminder)\b"
+            r"(?:\s+(?:to|de))?\s*(.+)",
+            lower,
+        )
+        if reminder_match:
+            remind_content = reminder_match.group(1).strip()
+            return IntentResult(
+                intent_name="create_reminder",
+                tool_id="create_reminder",
+                parameters={"title": remind_content},
+                confidence=0.88,
+                original_text=text
+            )
+
         # 1. Money transfer (Section 2, 19, 35 - N5)
         # Patterns like: "envoie 5 000 francs à maman", "transfère 10000 à kouassi", "envoie de l'argent à paul"
-        transfer_match = re.search(r"\b(?:envoie|transf[eè]re|donne|paye)\b", lower)
-        if transfer_match and ("argent" in lower or "franc" in lower or "fcfa" in lower or "cfa" in lower or re.search(r"\d+", lower)):
-            # Extract amount
-            amount_match = re.search(r"(\d+(?:[\s.,]\d+)?)\s*(?:francs?|fcfa|cfa|f)?", lower)
+        transfer_match = re.search(r"\b(?:envoie|transf[eè]re|donne|paye|send|transfer|pay)\b", lower)
+        if transfer_match and any(
+            marker in lower for marker in ("argent", "money", "cash", "franc", "fcfa", "cfa", "xof")
+        ) or transfer_match and re.search(r"\d+", lower):
+            amount_match = re.search(r"(\d[\d\s]*(?:[.,]\d{1,2})?)\s*(?:francs?|fcfa|cfa|xof|f)?", lower)
             amount = None
             if amount_match:
                 try:
-                    amount_str = amount_match.group(1).replace(" ", "").replace(",", ".")
+                    amount_str = amount_match.group(1).replace(" ", "")
+                    if re.fullmatch(r"\d{1,3}(?:,\d{3})+", amount_str):
+                        amount_str = amount_str.replace(",", "")
+                    else:
+                        amount_str = amount_str.replace(",", ".")
                     amount = float(amount_str)
                 except ValueError:
                     amount = None
 
-            # Extract recipient: "à maman", "à marie", "pour kouamé"
-            recipient_match = re.search(r"(?:à|au|pour)\s+([a-zA-ZÀ-ÿ0-9\s]+?)(?:$|\s+(?:par|via|sur))", lower)
+            recipient_match = re.search(
+                r"(?:à|au|pour|to)\s+([a-zA-ZÀ-ÿ0-9\s'-]+?)(?:$|\s+(?:par|via|sur|using))",
+                lower,
+            )
             recipient = recipient_match.group(1).strip() if recipient_match else None
 
             # If recipient is "maman" and context has contacts:
@@ -77,7 +104,11 @@ class IntentResolver:
                     parameters={"recipient": recipient} if recipient else {},
                     confidence=0.85,
                     is_ambiguous=True,
-                    clarification_question="Quel montant souhaitez-vous envoyer ?",
+                    clarification_question=(
+                        "What amount would you like to send?"
+                        if (context or {}).get("language") == "en"
+                        else "Quel montant souhaitez-vous envoyer ?"
+                    ),
                     original_text=text
                 )
 
@@ -88,7 +119,11 @@ class IntentResolver:
                     parameters={"amount": amount},
                     confidence=0.85,
                     is_ambiguous=True,
-                    clarification_question="À qui souhaitez-vous envoyer cette somme ?",
+                    clarification_question=(
+                        "Who should receive this amount?"
+                        if (context or {}).get("language") == "en"
+                        else "À qui souhaitez-vous envoyer cette somme ?"
+                    ),
                     original_text=text
                 )
 
@@ -102,7 +137,12 @@ class IntentResolver:
 
         # 2. Call Contact (Section 35 - N1)
         # "appelle maman", "téléphone à jean", "passe un coup de fil à ali"
-        call_match = re.search(r"\b(?:appelle|appeler|téléphone|téléphoner)\b(?:\s+(?:à|au))?\s+([a-zA-ZÀ-ÿ0-9\s]+)", lower)
+        call_match = re.search(
+            r"\b(?:appelle|appeler|téléphone|téléphoner|call|phone)\b"
+            r"(?:\s+(?:à|au|to))?\s+([a-zA-ZÀ-ÿ0-9\s'-]+?)"
+            r"(?=\s+(?:sur|directement|s'il|please|tomorrow|today|demain|ce soir)\b|$)",
+            lower,
+        )
         if call_match:
             contact = call_match.group(1).strip()
             # Clean contact string
@@ -117,7 +157,12 @@ class IntentResolver:
 
         # 3. Send SMS (Section 35 - N2)
         # "écris à paul que j'arrive", "envoie un sms à maman disant je viens", "envoie un message à koffi"
-        sms_match = re.search(r"\b(?:écris|envoyer\s+un\s+sms|envoie\s+un\s+message|sms)\b(?:\s+à)?\s+([a-zA-ZÀ-ÿ0-9\s]+?)\s+(?:que|disant|pour\s+dire)\s+(.+)", lower)
+        sms_match = re.search(
+            r"\b(?:écris|envoyer\s+un\s+sms|envoie\s+un\s+message|sms|text|send\s+(?:a\s+)?(?:text|sms|message))\b"
+            r"(?:\s+(?:à|to))?\s+([a-zA-ZÀ-ÿ0-9\s'-]+?)\s+"
+            r"(?:que|disant|pour\s+dire|that|saying|to\s+say)\s+(.+)",
+            lower,
+        )
         if sms_match:
             contact = sms_match.group(1).strip()
             msg = sms_match.group(2).strip()
@@ -129,7 +174,12 @@ class IntentResolver:
                 original_text=text
             )
 
-        sms_short_match = re.search(r"\b(?:écris|envoie\s+un\s+message|envoie\s+un\s+sms)\b(?:\s+à)?\s+([a-zA-ZÀ-ÿ0-9\s]+)", lower)
+        sms_short_match = re.search(
+            r"\b(?:écris|envoie\s+un\s+message|envoie\s+un\s+sms|text|send\s+(?:a\s+)?(?:text|sms|message))\b"
+            r"(?:\s+(?:à|to))?\s+([a-zA-ZÀ-ÿ0-9\s'-]+?)"
+            r"(?=\s+(?:please|tomorrow|today|demain|ce soir|about|that|saying)\b|$)",
+            lower,
+        )
         if sms_short_match and "argent" not in lower:
             contact = sms_short_match.group(1).strip()
             return IntentResult(
@@ -138,13 +188,17 @@ class IntentResolver:
                 parameters={"contact_name": contact},
                 confidence=0.80,
                 is_ambiguous=True,
-                clarification_question=f"Quel message souhaitez-vous envoyer à {contact} ?",
+                clarification_question=(
+                    f"What message should I send to {contact}?"
+                    if (context or {}).get("language") == "en"
+                    else f"Quel message souhaitez-vous envoyer à {contact} ?"
+                ),
                 original_text=text
             )
 
         # 4. Open Application
         # "ouvre whatsapp", "lance facebook", "ouvre youtube"
-        app_match = re.search(r"\b(?:ouvre|lance|démarrer|afficher)\b\s+([a-zA-ZÀ-ÿ0-9\s]+)", lower)
+        app_match = re.search(r"\b(?:ouvre|lance|démarrer|afficher|open|launch|start)\b\s+([a-zA-ZÀ-ÿ0-9\s'-]+)", lower)
         if app_match and not any(k in lower for k in ["maps", "carte", "navigation", "position", "http", "www."]):
             app_name = app_match.group(1).strip()
             return IntentResult(
@@ -157,20 +211,24 @@ class IntentResolver:
 
         # 4b. Open a URL or search the web. URLs are routed before generic
         # "ouvre" application resolution so a web address is never treated as an app.
-        url_match = re.search(r"\b(?:ouvre|va sur)\s+(https?://\S+|www\.\S+)", lower)
+        url_match = re.search(r"\b(?:ouvre|va sur|open|go to|visit)\s+(https?://\S+|www\.\S+)", lower)
         if url_match:
             return IntentResult(intent_name="open_url", tool_id="open_url", parameters={"url": url_match.group(1)}, confidence=0.94, original_text=text)
-        contact_match = re.search(r"\b(?:cherche|trouve)\s+(?:le )?contact\s+(.+)", lower)
+        contact_match = re.search(r"\b(?:cherche|trouve|find|search for)\s+(?:le |the )?contact\s+(.+)", lower)
         if contact_match:
             return IntentResult(intent_name="search_contact", tool_id="search_contact", parameters={"query": contact_match.group(1).strip()}, confidence=0.92, original_text=text)
 
-        search_match = re.search(r"\b(?:cherche|recherche)\s+(.+)", lower)
+        search_match = re.search(r"\b(?:cherche|recherche|search for|look up)\s+(.+)", lower)
         if search_match:
             return IntentResult(intent_name="search_web", tool_id="search_web", parameters={"query": search_match.group(1).strip()}, confidence=0.88, original_text=text)
 
         # 5. Maps / Navigation (Section 35 - N3)
         # "conduis-moi à l'hôpital", "ouvre maps", "emmène-moi au supermarché"
-        nav_match = re.search(r"\b(?:conduis-moi|emmène-moi|itinéraire|navigation|direction)\b(?:\s+(?:à|au|vers))?\s*(.+)", lower)
+        nav_match = re.search(
+            r"\b(?:conduis-moi|emmène-moi|itinéraire|navigation|direction|navigate|directions)"
+            r"\b(?:\s+(?:à|au|vers|to))?\s*(.+)",
+            lower,
+        )
         if nav_match or "maps" in lower:
             dest = nav_match.group(1).strip() if nav_match else "destination inconnue"
             return IntentResult(
@@ -183,7 +241,11 @@ class IntentResolver:
 
         # 6. Read Notification (Section 35 - N4)
         # "lis mes messages", "lis mes notifications", "qu'est-ce que j'ai reçu"
-        if any(k in lower for k in ["notification", "notif", "dernier message", "nouveaux messages", "qu'est-ce que j'ai reçu"]):
+        if any(k in lower for k in [
+            "notification", "notif", "dernier message", "nouveaux messages",
+            "qu'est-ce que j'ai reçu", "read my messages", "read my notifications",
+            "new messages", "what did i receive",
+        ]):
             return IntentResult(
                 intent_name="read_notification",
                 tool_id="read_notification",
@@ -194,23 +256,19 @@ class IntentResolver:
 
         # 7. Create Reminder
         # "rappelle-moi demain à huit heures de lui envoyer le document"
-        reminder_match = re.search(r"\b(?:rappelle-moi|rappel|alarme|souviens-toi)\b\s*(.+)", lower)
-        if reminder_match:
-            remind_content = reminder_match.group(1).strip()
-            return IntentResult(
-                intent_name="create_reminder",
-                tool_id="create_reminder",
-                parameters={"title": remind_content},
-                confidence=0.88,
-                original_text=text
-            )
-
-        event_match = re.search(r"\b(?:crée|créer|ajoute|ajouter)\s+(?:un )?(?:événement|evenement)\s+(.+)", lower)
+        event_match = re.search(
+            r"\b(?:crée|créer|ajoute|ajouter|create|add)\s+(?:(?:un|an?) )?"
+            r"(?:événement|evenement|event)\s+(.+)",
+            lower,
+        )
         if event_match:
             return IntentResult(intent_name="create_event", tool_id="create_event", parameters={"title": event_match.group(1).strip()}, confidence=0.88, original_text=text)
 
         # 8. Read Screen / Accessibility
-        if any(k in lower for k in ["lis l'écran", "qu'est-ce qu'il y a sur l'écran", "aide-moi à lire"]):
+        if any(k in lower for k in [
+            "lis l'écran", "qu'est-ce qu'il y a sur l'écran", "aide-moi à lire",
+            "read the screen", "what is on the screen", "what's on the screen",
+        ]):
             return IntentResult(
                 intent_name="read_screen",
                 tool_id="read_screen",
@@ -219,7 +277,7 @@ class IntentResolver:
                 original_text=text
             )
 
-        click_match = re.search(r"\b(?:appuie|clique|sélectionne)\s+(?:sur )?(.+)", lower)
+        click_match = re.search(r"\b(?:appuie|clique|sélectionne|tap|click|select)\s+(?:(?:sur|on) )?(.+)", lower)
         if click_match:
             return IntentResult(intent_name="accessibility_click", tool_id="accessibility_click", parameters={"label": click_match.group(1).strip()}, confidence=0.82, original_text=text)
 
@@ -230,6 +288,10 @@ class IntentResolver:
             parameters={"raw_query": text},
             confidence=0.35,
             is_ambiguous=True,
-            clarification_question="Je ne suis pas certain de comprendre votre demande. Pouvez-vous préciser ?",
+            clarification_question=(
+                "I'm not sure I understand. Could you clarify?"
+                if (context or {}).get("language") == "en"
+                else "Je ne suis pas certain de comprendre votre demande. Pouvez-vous préciser ?"
+            ),
             original_text=text
         )

@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.database.session import get_db
-from app.database.models.models import Transaction, AuditLog, User
+from app.database.models.models import Transaction, User, Action, AgentRun, Intent, Conversation
 from app.core.dependencies import get_current_user
 from app.core.security import generate_idempotency_key
 from app.agent.agent_runtime import AgentRuntime
@@ -14,11 +14,24 @@ from app.core.logging import logger
 router = APIRouter(prefix="/transactions", tags=["Transactions"])
 
 class TransactionPreviewRequest(BaseModel):
-    amount: float
-    currency: str = "XOF"
-    recipient: str
-    provider: str = "wave"
+    amount: float = Field(gt=0, allow_inf_nan=False)
+    currency: str = Field(default="XOF", min_length=3, max_length=8)
+    recipient: str = Field(min_length=1, max_length=128)
+    provider: str = Field(default="wave", min_length=1, max_length=64)
     context: Optional[Dict[str, Any]] = None
+
+    @field_validator("recipient")
+    @classmethod
+    def validate_recipient(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Destinataire requis.")
+        return value
+
+    @field_validator("currency")
+    @classmethod
+    def normalize_currency(cls, value: str) -> str:
+        return value.strip().upper()
 
 class TransactionPreviewResponse(BaseModel):
     transaction_id: Optional[str] = None
@@ -44,25 +57,16 @@ async def preview_transaction(
     Section 19 - Génère un aperçu de la transaction avant toute exécution.
     Aucun fonds n'est déplacé à cette étape.
     """
-    if req.amount <= 0:
-        raise HTTPException(status_code=400, detail="Le montant doit être positif.")
-    if not req.recipient.strip():
-        raise HTTPException(status_code=400, detail="Destinataire requis.")
-
-    # Estimated fee (provider-dependent, simplified here)
-    fee_rate = 0.01 if req.provider in ["wave", "orange_money"] else 0.02
-    fee = round(req.amount * fee_rate, 2)
-    total = req.amount + fee
+    fee = 0.0
+    total = req.amount
     idemp_key = generate_idempotency_key()
 
     preview_msg = (
-        f"Vous allez envoyer {req.amount:,.0f} {req.currency} "
-        f"à {req.recipient} via {req.provider.replace('_', ' ').title()}. "
-        f"Frais estimés : {fee:,.0f} {req.currency}. "
-        f"Total débité : {total:,.0f} {req.currency}."
+        f"Aperçu non exécutable : {req.amount:,.0f} {req.currency} à {req.recipient} "
+        f"via {req.provider}. Aucun frais réel n'est calculé et aucun fonds ne sera déplacé."
     )
 
-    logger.info(f"Transaction preview generated for user={current_user.id}, amount={req.amount}, recipient={req.recipient}")
+    logger.info("Non-executable financial preview generated")
 
     return TransactionPreviewResponse(
         idempotency_key=idemp_key,
@@ -73,7 +77,7 @@ async def preview_transaction(
         estimated_fee=fee,
         total_amount=total,
         preview_message=preview_msg,
-        status="preview"
+        status="preview_only"
     )
 
 @router.post("/{idempotency_key}/confirm")
@@ -83,34 +87,11 @@ async def confirm_transaction(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """
-    Section 19 - Confirmation explicite après vérification biométrique.
-    Vérifie idempotence avant exécution (Section 20).
-    """
-    # Check idempotency - never re-execute an existing transaction
-    res = await db.execute(
-        select(Transaction).where(Transaction.idempotency_key == idempotency_key)
+    """Reject execution until an approved financial connector is configured."""
+    raise HTTPException(
+        status_code=503,
+        detail="Aucun connecteur financier agréé n'est activé. L'aperçu ne peut pas être confirmé.",
     )
-    existing_tx = res.scalars().first()
-    if existing_tx:
-        return {
-            "message": "Transaction déjà traitée (idempotence).",
-            "transaction_id": existing_tx.id,
-            "status": existing_tx.status,
-            "provider_reference": existing_tx.provider_reference
-        }
-
-    if not biometric_authenticated:
-        raise HTTPException(
-            status_code=403,
-            detail="Authentification biométrique obligatoire pour confirmer un transfert d'argent."
-        )
-
-    return {
-        "message": "Transfert en cours d'exécution. Veuillez patienter.",
-        "idempotency_key": idempotency_key,
-        "status": "EXECUTING"
-    }
 
 @router.get("/{transaction_id}")
 async def get_transaction(
@@ -119,7 +100,12 @@ async def get_transaction(
     db: AsyncSession = Depends(get_db)
 ):
     res = await db.execute(
-        select(Transaction).where(Transaction.id == transaction_id)
+        select(Transaction)
+        .join(Action, Transaction.action_id == Action.id)
+        .join(AgentRun, Action.agent_run_id == AgentRun.id)
+        .join(Intent, AgentRun.intent_id == Intent.id)
+        .join(Conversation, Intent.conversation_id == Conversation.id)
+        .where(Transaction.id == transaction_id, Conversation.user_id == current_user.id)
     )
     tx = res.scalars().first()
     if not tx:

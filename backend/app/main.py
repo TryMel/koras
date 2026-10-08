@@ -1,13 +1,16 @@
 import uuid
 import time
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request, Response, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.logging import setup_logging, logger
-from app.database.session import init_db
+from app.database.session import init_db, get_db
 
 # Import all routers
 from app.api.auth.routes import router as auth_router
@@ -97,5 +100,17 @@ async def root():
     }
 
 @app.get("/health", tags=["Health"])
-async def health():
+async def health(db: AsyncSession = Depends(get_db)):
+    try:
+        await db.execute(text("SELECT 1"))
+    except SQLAlchemyError:
+        logger.warning("Readiness check failed: database unavailable", exc_info=True)
+        return JSONResponse(
+            status_code=503,
+            content={"status": "unavailable", "database": "unavailable", "version": settings.VERSION},
+        )
+    return {"status": "ok", "database": "ok", "version": settings.VERSION}
+
+@app.get("/health/live", tags=["Health"])
+async def liveness():
     return {"status": "ok", "version": settings.VERSION}

@@ -44,15 +44,16 @@ services:
       - postgres
       - redis
 
-  # Serveur MCP (Section 10.4)
+  # Transport stdio : lancer avec `docker compose run --rm -i mcp`.
   mcp:
+    profiles:
+      - mcp-stdio
     build:
       context: .
       dockerfile: mcp/Dockerfile
     container_name: koras-mcp
-    restart: always
-    ports:
-      - "8765:8765"
+    stdin_open: true
+    tty: false
 
   # Portail d'Administration Next.js (Section 42 & 43)
   admin:

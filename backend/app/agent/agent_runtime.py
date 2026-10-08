@@ -25,6 +25,7 @@ class AgentState(str, Enum):
     VERIFYING = "VERIFYING"
     SUCCESS = "SUCCESS"
     FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
     UNKNOWN = "UNKNOWN"
     RECOVERY = "RECOVERY"
 
@@ -46,6 +47,7 @@ class AgentRunOutput(BaseModel):
     state: AgentState
     spoken_response: str
     visual_feedback: Dict[str, Any]
+    conversation_id: Optional[str] = None
     steps: List[PlannedStep] = Field(default_factory=list)
     clarification_question: Optional[str] = None
     awaiting_confirmation_step_id: Optional[str] = None
@@ -64,7 +66,10 @@ class AgentRuntime:
         """
         run_id = f"run_{uuid.uuid4().hex[:12]}"
         ctx = context or {}
-        ctx["language"] = IntentResolver.detect_language(user_input)
+        requested_language = ctx.get("language")
+        ctx["language"] = requested_language if requested_language in {"en", "fr"} else (
+            IntentResolver.detect_language(user_input)
+        )
         battery = ctx.get("battery_level", 80)
         is_offline = ctx.get("is_offline", False)
 
@@ -229,16 +234,22 @@ class AgentRuntime:
     @staticmethod
     def _generate_success_speech(steps: List[PlannedStep]) -> str:
         if not steps:
-            return "Opération terminée."
+            return "Aucune action n'a été exécutée."
         first = steps[0]
         if first.tool_id == "open_app":
-            return f"J'ai ouvert l'application {first.parameters.get('app_name')}."
+            return f"Android a ouvert l'application {first.parameters.get('app_name')}."
         elif first.tool_id == "call_contact":
-            return f"J'appelle {first.parameters.get('contact_name')}."
+            return (
+                f"Android a ouvert l'interface d'appel pour {first.parameters.get('contact_name')}. "
+                "La connexion de l'appel n'est pas confirmée."
+            )
         elif first.tool_id == "send_sms":
-            return f"Le SMS a été envoyé à {first.parameters.get('contact_name')}."
+            return (
+                f"Android a accepté la demande d'envoi du SMS à {first.parameters.get('contact_name')}. "
+                "La livraison du message n'est pas confirmée."
+            )
         elif first.tool_id == "open_maps":
-            return f"Navigation lancée vers {first.parameters.get('destination')}."
+            return f"Android a ouvert l'interface de navigation vers {first.parameters.get('destination')}."
         elif first.tool_id == "read_notification":
             notifs = first.result.get("notifications", [])
             if notifs:
@@ -253,9 +264,15 @@ class AgentRuntime:
                 return f"J'ai trouvé le contact {contacts[0].get('name', 'demandé')}."
             return "Je n'ai pas trouvé ce contact."
         elif first.tool_id == "create_reminder":
-            return f"Rappel enregistré : {first.parameters.get('title')}."
+            return (
+                f"Le formulaire de rappel « {first.parameters.get('title')} » est ouvert dans Calendrier. "
+                "Enregistrez-le dans Calendrier pour le créer."
+            )
+        elif first.tool_id == "create_event":
+            return (
+                f"Le formulaire de l'événement « {first.parameters.get('title')} » est ouvert dans Calendrier. "
+                "Enregistrez-le dans Calendrier pour le créer."
+            )
         elif first.tool_id == "read_screen":
             return "L'écran affiche les commandes principales du téléphone."
-        elif first.tool_id == "transfer_money":
-            return f"Transfert de {first.parameters.get('amount')} francs à {first.parameters.get('recipient')} effectué avec succès."
-        return "L'action a été exécutée et vérifiée."
+        return "Le résultat observé par le téléphone a été enregistré."

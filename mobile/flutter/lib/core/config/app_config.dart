@@ -1,7 +1,11 @@
+import 'package:flutter/foundation.dart';
+
 class AppConfig {
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://127.0.0.1:8000/api/v1',
+    defaultValue: kIsWeb
+        ? 'http://127.0.0.1:8000/api/v1'
+        : 'http://10.0.2.2:8000/api/v1',
   );
 
   static const String appName = 'KORAS';
@@ -15,6 +19,7 @@ class AppConfig {
   // Platform channels (matching Kotlin side)
   static const String methodChannelName = 'com.koras.koras_mobile/methods';
   static const String eventChannelName = 'com.koras.koras_mobile/events';
-  static const String accessibilityChannelName = 'com.koras.koras_mobile/accessibility';
+  static const String accessibilityChannelName =
+      'com.koras.koras_mobile/accessibility';
   static const String audioChannelName = 'com.koras.koras_mobile/audio';
 }

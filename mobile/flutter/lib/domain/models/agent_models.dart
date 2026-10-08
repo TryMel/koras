@@ -65,7 +65,9 @@ class PlannedStepModel {
       requiresBiometric: json['requires_biometric'] as bool? ?? false,
       idempotencyKey: json['idempotency_key'] as String?,
       status: json['status'] as String? ?? 'pending',
-      result: json['result'] != null ? Map<String, dynamic>.from(json['result'] as Map) : null,
+      result: json['result'] != null
+          ? Map<String, dynamic>.from(json['result'] as Map)
+          : null,
       error: json['error'] as String?,
     );
   }
@@ -77,6 +79,7 @@ class AgentRunResult {
   final String spokenResponse;
   final Map<String, dynamic> visualFeedback;
   final List<PlannedStepModel> steps;
+  final String? conversationId;
   final String? clarificationQuestion;
   final String? awaitingConfirmationStepId;
   final bool isTerminal;
@@ -87,6 +90,7 @@ class AgentRunResult {
     required this.spokenResponse,
     required this.visualFeedback,
     this.steps = const [],
+    this.conversationId,
     this.clarificationQuestion,
     this.awaitingConfirmationStepId,
     this.isTerminal = false,
@@ -107,26 +111,42 @@ class AgentRunResult {
       spokenResponse: json['spoken_response'] as String,
       visualFeedback: Map<String, dynamic>.from(json['visual_feedback'] as Map),
       steps: steps,
+      conversationId: json['conversation_id'] as String?,
       clarificationQuestion: json['clarification_question'] as String?,
-      awaitingConfirmationStepId: json['awaiting_confirmation_step_id'] as String?,
+      awaitingConfirmationStepId:
+          json['awaiting_confirmation_step_id'] as String?,
       isTerminal: json['is_terminal'] as bool? ?? false,
     );
   }
 
   static AgentState _parseState(String s) {
     switch (s) {
-      case 'RECEIVED': return AgentState.understanding;
-      case 'UNDERSTANDING': return AgentState.understanding;
-      case 'PLANNING': return AgentState.thinking;
-      case 'WAITING_FOR_CLARIFICATION': return AgentState.waitingForClarification;
-      case 'WAITING_FOR_CONFIRMATION': return AgentState.waitingForConfirmation;
-      case 'READY_TO_EXECUTE': return AgentState.executing;
-      case 'EXECUTING': return AgentState.executing;
-      case 'VERIFYING': return AgentState.verifying;
-      case 'SUCCESS': return AgentState.success;
-      case 'FAILED': return AgentState.failed;
-      case 'UNKNOWN': return AgentState.unknown;
-      default: return AgentState.idle;
+      case 'RECEIVED':
+        return AgentState.understanding;
+      case 'UNDERSTANDING':
+        return AgentState.understanding;
+      case 'PLANNING':
+        return AgentState.thinking;
+      case 'WAITING_FOR_CLARIFICATION':
+        return AgentState.waitingForClarification;
+      case 'WAITING_FOR_CONFIRMATION':
+        return AgentState.waitingForConfirmation;
+      case 'READY_TO_EXECUTE':
+        return AgentState.executing;
+      case 'EXECUTING':
+        return AgentState.executing;
+      case 'VERIFYING':
+        return AgentState.verifying;
+      case 'SUCCESS':
+        return AgentState.success;
+      case 'FAILED':
+        return AgentState.failed;
+      case 'CANCELLED':
+        return AgentState.cancelled;
+      case 'UNKNOWN':
+        return AgentState.unknown;
+      default:
+        return AgentState.idle;
     }
   }
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../providers/conversation_provider.dart';
 import '../../confirmation/screens/confirmation_sheet.dart';
 import '../../../domain/models/agent_models.dart';
@@ -74,7 +75,9 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
             child: Icon(
               conversationState.isOnline ? Icons.wifi : Icons.wifi_off,
               color: conversationState.isOnline ? Colors.green : Colors.red,
-              semanticLabel: conversationState.isOnline ? 'Connecté' : 'Hors ligne',
+              semanticLabel: conversationState.isOnline
+                  ? 'Connecté'
+                  : 'Hors ligne',
             ),
           ),
         ],
@@ -91,7 +94,10 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                   ? _buildEmptyState()
                   : ListView.builder(
                       controller: _scrollController,
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
                       itemCount: conversationState.messages.length,
                       itemBuilder: (context, index) {
                         final msg = conversationState.messages[index];
@@ -111,7 +117,25 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                 ),
                 child: Text(
                   conversationState.currentTranscript!,
-                  style: const TextStyle(color: Colors.white60, fontStyle: FontStyle.italic),
+                  style: const TextStyle(
+                    color: Colors.white60,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ),
+
+            if (conversationState.error != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 4,
+                ),
+                child: Semantics(
+                  liveRegion: true,
+                  child: Text(
+                    conversationState.error!,
+                    style: const TextStyle(color: Colors.orangeAccent),
+                  ),
                 ),
               ),
 
@@ -154,8 +178,12 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     );
   }
 
-  Widget _buildInputArea(ConversationState state, ConversationNotifier notifier) {
-    final isActive = state.agentState == AgentState.listening ||
+  Widget _buildInputArea(
+    ConversationState state,
+    ConversationNotifier notifier,
+  ) {
+    final isActive =
+        state.agentState == AgentState.listening ||
         state.agentState == AgentState.understanding ||
         state.agentState == AgentState.thinking ||
         state.agentState == AgentState.executing;
@@ -187,6 +215,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                   vertical: 14,
                 ),
               ),
+              onChanged: (_) => setState(() {}),
               onSubmitted: (text) {
                 if (text.trim().isNotEmpty) {
                   notifier.processInput(text.trim());

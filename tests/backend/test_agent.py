@@ -95,3 +95,32 @@ def test_mvp_web_contact_event_intents_are_covered():
     assert IntentResolver.resolve("Cherche le contact Awa")[0].tool_id == "search_contact"
     assert IntentResolver.resolve("Recherche la météo à Abidjan")[0].tool_id == "search_web"
     assert IntentResolver.resolve("Crée un événement réunion demain")[0].tool_id == "create_event"
+
+def test_english_mvp_intents_and_language_detection():
+    call = IntentResolver.resolve("Please call Maman")
+    assert call[0].tool_id == "call_contact"
+    assert call[0].parameters["contact_name"] == "maman"
+    assert call[0].original_text == "Please call Maman"
+
+    sms = IntentResolver.resolve("Text Paul that I am on my way")
+    assert sms[0].tool_id == "send_sms"
+    assert sms[0].parameters == {"contact_name": "paul", "message": "i am on my way"}
+
+    assert IntentResolver.resolve("Open WhatsApp")[0].parameters["app_name"] == "whatsapp"
+    assert IntentResolver.resolve("Navigate to the airport")[0].parameters["destination"] == "the airport"
+    assert IntentResolver.resolve("Remind me to call Paul tomorrow")[0].tool_id == "create_reminder"
+    assert IntentResolver.resolve("Search for contact Awa")[0].tool_id == "search_contact"
+    assert IntentResolver.detect_language("Read my notifications") == "en"
+
+def test_explicit_language_preference_is_not_overridden_by_detection():
+    intents = IntentResolver.resolve(
+        "Envoie de l'argent à maman",
+        context={"language": "en"},
+    )
+    assert "What amount" in intents[0].clarification_question
+
+    result = AgentRuntime.process_request(
+        "Ouvre WhatsApp",
+        context={"language": "en"},
+    )
+    assert result.visual_feedback["language"] == "en"

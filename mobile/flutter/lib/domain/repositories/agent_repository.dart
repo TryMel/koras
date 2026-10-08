@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+
 import '../../core/network/api_client.dart';
 import '../models/agent_models.dart';
 
@@ -11,13 +12,17 @@ class AgentRepository {
     String? conversationId,
     Map<String, dynamic>? context,
     String? deviceIdentifier,
+    String? language,
   }) async {
-    final response = await _dio.post('/agent/run', data: {
-      'user_input': userInput,
-      if (conversationId != null) 'conversation_id': conversationId,
-      'context': context ?? {},
-      if (deviceIdentifier != null) 'device_identifier': deviceIdentifier,
-    });
+    final response = await _dio.post(
+      '/agent/run',
+      data: {
+        'user_input': userInput,
+        if (conversationId != null) 'conversation_id': conversationId,
+        'context': {...?context, if (language != null) 'language': language},
+        if (deviceIdentifier != null) 'device_identifier': deviceIdentifier,
+      },
+    );
     return AgentRunResult.fromJson(response.data as Map<String, dynamic>);
   }
 
@@ -28,11 +33,14 @@ class AgentRepository {
     required bool biometricAuthenticated,
     Map<String, dynamic>? context,
   }) async {
-    final response = await _dio.post('/agent/runs/$runId/confirm', data: {
-      'step_id': stepId,
-      'biometric_authenticated': biometricAuthenticated,
-      'context': context ?? {},
-    });
+    final response = await _dio.post(
+      '/agent/runs/$runId/confirm',
+      data: {
+        'step_id': stepId,
+        'biometric_authenticated': biometricAuthenticated,
+        'context': context ?? {},
+      },
+    );
     return AgentRunResult.fromJson(response.data as Map<String, dynamic>);
   }
 
@@ -57,11 +65,14 @@ class AgentRepository {
     Map<String, dynamic> result = const {},
     String? error,
   }) async {
-    final response = await _dio.post('/agent/runs/$runId/steps/$stepId/result', data: {
-      'status': status,
-      'result': result,
-      if (error != null) 'error': error,
-    });
+    final response = await _dio.post(
+      '/agent/runs/$runId/steps/$stepId/result',
+      data: {
+        'status': status,
+        'result': result,
+        if (error != null) 'error': error,
+      },
+    );
     return AgentRunResult.fromJson(response.data as Map<String, dynamic>);
   }
 
@@ -72,12 +83,15 @@ class AgentRepository {
     required String recipient,
     String provider = 'wave',
   }) async {
-    final response = await _dio.post('/transactions/preview', data: {
-      'amount': amount,
-      'currency': currency,
-      'recipient': recipient,
-      'provider': provider,
-    });
+    final response = await _dio.post(
+      '/transactions/preview',
+      data: {
+        'amount': amount,
+        'currency': currency,
+        'recipient': recipient,
+        'provider': provider,
+      },
+    );
     return response.data as Map<String, dynamic>;
   }
 }

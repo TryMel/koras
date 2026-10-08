@@ -1,20 +1,22 @@
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from typing import List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.database.session import get_db
-from app.database.models.models import Device, User, AuditLog
-from app.core.dependencies import get_current_user
+from app.database.models.models import Device, User, AuditLog, Session as AuthSession
+from app.core.dependencies import get_current_user, get_authenticated_session
 
 router = APIRouter(prefix="/devices", tags=["Devices"])
 
 class DeviceRegistrationRequest(BaseModel):
-    device_identifier: str
-    platform: str = "android"
-    android_version: Optional[str] = "14"
-    app_version: str = "1.0.0"
+    device_identifier: str = Field(min_length=1, max_length=128)
+    platform: str = Field(default="android", min_length=1, max_length=32)
+    android_version: Optional[str] = Field(default="14", max_length=32)
+    app_version: str = Field(default="1.0.0", min_length=1, max_length=32)
 
 class DeviceResponse(BaseModel):
     id: str
@@ -28,13 +30,28 @@ class DeviceResponse(BaseModel):
 async def register_device(
     req: DeviceRegistrationRequest,
     current_user: User = Depends(get_current_user),
+    auth_session: AuthSession = Depends(get_authenticated_session),
     db: AsyncSession = Depends(get_db)
 ):
     res = await db.execute(select(Device).where(Device.device_identifier == req.device_identifier))
     existing = res.scalars().first()
     if existing:
-        existing.last_seen_at = Device.last_seen_at.default.arg()
-        existing.trust_status = "trusted"
+        if existing.user_id != current_user.id:
+            raise HTTPException(status_code=409, detail="Cet identifiant d'appareil est déjà associé à un autre compte.")
+        if existing.trust_status != "trusted":
+            raise HTTPException(status_code=409, detail="Cet appareil n'est pas approuvé et ne peut pas être réactivé ici.")
+        existing.last_seen_at = datetime.now(timezone.utc)
+        existing.platform = req.platform
+        existing.android_version = req.android_version
+        existing.app_version = req.app_version
+        auth_session.device_id = existing.id
+        db.add(AuditLog(
+            user_id=current_user.id,
+            device_id=existing.id,
+            event_type="DEVICE_REGISTERED",
+            resource_type="device",
+            resource_id=existing.id,
+        ))
         await db.commit()
         await db.refresh(existing)
         return existing
@@ -48,7 +65,20 @@ async def register_device(
         trust_status="trusted"
     )
     db.add(device)
-    await db.commit()
+    try:
+        await db.flush()
+        auth_session.device_id = device.id
+        db.add(AuditLog(
+            user_id=current_user.id,
+            device_id=device.id,
+            event_type="DEVICE_REGISTERED",
+            resource_type="device",
+            resource_id=device.id,
+        ))
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Cet appareil est déjà enregistré.") from exc
     await db.refresh(device)
     return device
 
@@ -72,6 +102,14 @@ async def revoke_device(
         raise HTTPException(status_code=404, detail="Appareil non trouvé.")
 
     device.trust_status = "revoked"
+    sessions_result = await db.execute(
+        select(AuthSession).where(AuthSession.device_id == device.id, AuthSession.status == "active")
+    )
+    revoked_at = datetime.now(timezone.utc)
+    for auth_session in sessions_result.scalars().all():
+        auth_session.status = "terminated"
+        auth_session.ended_at = revoked_at
+
     audit = AuditLog(
         user_id=current_user.id,
         device_id=device_id,

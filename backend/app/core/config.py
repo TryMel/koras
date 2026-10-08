@@ -45,6 +45,8 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def ensure_secret_key(self) -> "Settings":
+        if self.ENVIRONMENT.lower() in {"production", "prod"}:
+            self.DEBUG = False
         if self.SECRET_KEY:
             return self
         if self.ENVIRONMENT.lower() in {"production", "prod"}:

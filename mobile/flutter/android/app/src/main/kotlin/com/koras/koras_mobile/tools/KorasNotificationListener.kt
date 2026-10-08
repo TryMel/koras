@@ -8,6 +8,8 @@ class KorasNotificationListener : NotificationListenerService() {
     companion object {
         private var service: KorasNotificationListener? = null
 
+        fun isConnected(): Boolean = service != null
+
         fun latest(limit: Int): List<Map<String, String>> = service?.activeNotifications
             ?.sortedByDescending { it.postTime }
             ?.take(limit.coerceIn(1, 10))

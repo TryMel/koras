@@ -1,9 +1,11 @@
 package com.koras.koras_mobile.bridge
 
 import android.content.Context
+import android.content.Intent
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
+import android.provider.Settings
 import com.koras.koras_mobile.accessibility.KorasAccessibilityService
 import com.koras.koras_mobile.tools.AppTool
 import com.koras.koras_mobile.tools.DeviceTool
@@ -94,11 +96,23 @@ class MethodChannelRegistry(
             "getDeviceInfo" -> {
                 result.success(deviceTool.getDeviceInfo())
             }
+            "isAccessibilityServiceConnected" -> {
+                result.success(KorasAccessibilityService.isRunning())
+            }
+            "openNotificationListenerSettings" -> {
+                result.success(openSettings(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+            }
+            "openAccessibilitySettings" -> {
+                result.success(openSettings(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            }
             "authenticateBiometric" -> {
                 authenticateBiometric(call.argument<String>("reason") ?: "Confirmer cette action", result)
             }
             "readNotifications" -> {
                 result.success(KorasNotificationListener.latest(call.argument<Int>("limit") ?: 3))
+            }
+            "isNotificationListenerConnected" -> {
+                result.success(KorasNotificationListener.isConnected())
             }
             "createReminder" -> {
                 result.success(calendarTool.createReminder(call.argument<String>("title") ?: ""))
@@ -108,6 +122,15 @@ class MethodChannelRegistry(
             ))
             else -> result.notImplemented()
         }
+    }
+
+    private fun openSettings(action: String): Boolean = try {
+        context.startActivity(Intent(action).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        })
+        true
+    } catch (_: Exception) {
+        false
     }
 
     private fun authenticateBiometric(reason: String, result: MethodChannel.Result) {

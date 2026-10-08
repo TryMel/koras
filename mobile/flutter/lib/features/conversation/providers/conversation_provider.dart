@@ -1,8 +1,11 @@
 import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
 import '../../../domain/models/agent_models.dart';
 import '../../../domain/repositories/agent_repository.dart';
 import '../../../core/platform/koras_platform_bridge.dart';
@@ -13,6 +16,7 @@ class ConversationState {
   final AgentState agentState;
   final String? currentRunId;
   final AgentRunResult? lastResult;
+  final String? conversationId;
   final List<ChatMessage> messages;
   final bool isListening;
   final bool isSpeaking;
@@ -24,6 +28,7 @@ class ConversationState {
     this.agentState = AgentState.idle,
     this.currentRunId,
     this.lastResult,
+    this.conversationId,
     this.messages = const [],
     this.isListening = false,
     this.isSpeaking = false,
@@ -36,6 +41,7 @@ class ConversationState {
     AgentState? agentState,
     String? currentRunId,
     AgentRunResult? lastResult,
+    String? conversationId,
     List<ChatMessage>? messages,
     bool? isListening,
     bool? isSpeaking,
@@ -47,6 +53,7 @@ class ConversationState {
       agentState: agentState ?? this.agentState,
       currentRunId: currentRunId ?? this.currentRunId,
       lastResult: lastResult ?? this.lastResult,
+      conversationId: conversationId ?? this.conversationId,
       messages: messages ?? this.messages,
       isListening: isListening ?? this.isListening,
       isSpeaking: isSpeaking ?? this.isSpeaking,
@@ -83,12 +90,14 @@ class _DeviceExecution {
 
 // ─── Providers ────────────────────────────────────────────────────────────────
 
-final agentRepositoryProvider = Provider<AgentRepository>((ref) => AgentRepository());
+final agentRepositoryProvider = Provider<AgentRepository>(
+  (ref) => AgentRepository(),
+);
 
 final conversationProvider =
     StateNotifierProvider<ConversationNotifier, ConversationState>(
-  (ref) => ConversationNotifier(ref.read(agentRepositoryProvider)),
-);
+      (ref) => ConversationNotifier(ref.read(agentRepositoryProvider)),
+    );
 
 // ─── Notifier ─────────────────────────────────────────────────────────────────
 
@@ -97,12 +106,30 @@ class ConversationNotifier extends StateNotifier<ConversationState> {
   final SpeechToText _stt = SpeechToText();
   final FlutterTts _tts = FlutterTts();
   bool _sttAvailable = false;
+  bool _voiceFeedbackAlways = true;
+  double _voiceSpeed = 0.85;
+  String _speechLocale = 'fr_FR';
+  String _ttsLanguage = 'fr-FR';
 
   ConversationNotifier(this._repo) : super(const ConversationState()) {
     _initAudio();
   }
 
   Future<void> _initAudio() async {
+    final preferences = await SharedPreferences.getInstance();
+    final configuredLocale = preferences.getString('koras_locale') ?? 'fr';
+    _speechLocale = configuredLocale == 'en' ? 'en_US' : 'fr_FR';
+    _ttsLanguage = configuredLocale == 'en' ? 'en-US' : 'fr-FR';
+    _voiceSpeed = preferences.getDouble('koras_voice_speed') ?? 0.85;
+    _voiceFeedbackAlways = preferences.getBool('koras_voice_feedback') ?? true;
+    final microphonePermission = await Permission.microphone.request();
+    if (!microphonePermission.isGranted) {
+      state = state.copyWith(
+        agentState: AgentState.permissionDenied,
+        error: 'Autorisation du microphone refusée.',
+      );
+      return;
+    }
     _sttAvailable = await _stt.initialize(
       onStatus: (status) {
         if (status == 'done' || status == 'notListening') {
@@ -112,8 +139,8 @@ class ConversationNotifier extends StateNotifier<ConversationState> {
       onError: (error) => _handleSpeechError(error.errorMsg),
     );
 
-    await _tts.setLanguage('fr-FR');
-    await _tts.setSpeechRate(0.85);
+    await _tts.setLanguage(_ttsLanguage);
+    await _tts.setSpeechRate(_voiceSpeed);
     await _tts.setVolume(1.0);
 
     _tts.setCompletionHandler(() {
@@ -152,7 +179,7 @@ class ConversationNotifier extends StateNotifier<ConversationState> {
           processInput(result.recognizedWords);
         }
       },
-      localeId: 'fr_FR',
+      localeId: _speechLocale,
       cancelOnError: false,
       pauseFor: const Duration(seconds: 3),
     );
@@ -185,10 +212,16 @@ class ConversationNotifier extends StateNotifier<ConversationState> {
   Future<void> processInput(String text) async {
     if (text.trim().isEmpty) return;
 
-    if (text.trim().toLowerCase() == 'répète' || text.trim().toLowerCase() == 'repete') {
+    if (text.trim().toLowerCase() == 'répète' ||
+        text.trim().toLowerCase() == 'repete') {
       final lastResponse = state.messages.lastWhere(
         (message) => message.role == 'koras',
-        orElse: () => ChatMessage(id: 'none', role: 'koras', content: 'Je n’ai encore rien à répéter.', createdAt: DateTime.now()),
+        orElse: () => ChatMessage(
+          id: 'none',
+          role: 'koras',
+          content: 'Je n’ai encore rien à répéter.',
+          createdAt: DateTime.now(),
+        ),
       );
       await _speak(lastResponse.content);
       return;
@@ -217,24 +250,34 @@ class ConversationNotifier extends StateNotifier<ConversationState> {
         state = state.copyWith(
           agentState: AgentState.offline,
           isOnline: false,
+          error: 'Le service KORAS nécessite une connexion pour analyser et sécuriser cette demande.',
         );
-        await _speak('Connexion indisponible. Seules les fonctions locales sont accessibles.');
+        await _speak(
+          'Connexion indisponible. Cette demande n’a pas été envoyée et aucune action n’a été lancée.',
+        );
+        return;
       }
 
       // Get context from device
       final battery = await KorasPlatformBridge.getBatteryLevel();
       final deviceInfo = await KorasPlatformBridge.getDeviceInfo();
+      final preferences = await SharedPreferences.getInstance();
+      final language = preferences.getString('koras_locale') ?? 'fr';
+      _speechLocale = language == 'en' ? 'en_US' : 'fr_FR';
+      _ttsLanguage = language == 'en' ? 'en-US' : 'fr-FR';
 
-      state = state.copyWith(agentState: AgentState.thinking);
+      state = state.copyWith(agentState: AgentState.thinking, isOnline: true);
 
       final result = await _repo.runAgent(
         userInput: resolvedText,
+        conversationId: state.conversationId,
         context: {
           'battery_level': battery,
           'is_offline': !isOnline,
           'device_model': deviceInfo['model'] ?? '',
         },
         deviceIdentifier: deviceInfo['device_identifier'] as String?,
+        language: language,
       );
 
       await _handleAgentResult(result);
@@ -249,11 +292,14 @@ class ConversationNotifier extends StateNotifier<ConversationState> {
 
   String _mergeClarification(String answer) {
     final pending = state.lastResult;
-    if (state.agentState != AgentState.waitingForClarification || pending == null) return answer;
+    if (state.agentState != AgentState.waitingForClarification ||
+        pending == null)
+      return answer;
     final feedback = pending.visualFeedback;
     final intent = feedback['intent'] as String?;
     final parameters = feedback['partial_parameters'] is Map
-        ? Map<String, dynamic>.from(feedback['partial_parameters'] as Map) : const <String, dynamic>{};
+        ? Map<String, dynamic>.from(feedback['partial_parameters'] as Map)
+        : const <String, dynamic>{};
     if (intent == 'transfer_money' && parameters['recipient'] != null) {
       return 'Envoie $answer francs à ${parameters['recipient']}';
     }
@@ -280,6 +326,7 @@ class ConversationNotifier extends StateNotifier<ConversationState> {
       agentState: result.state,
       currentRunId: result.runId,
       lastResult: result,
+      conversationId: result.conversationId,
       messages: [...state.messages, korasMsg],
     );
 
@@ -298,28 +345,55 @@ class ConversationNotifier extends StateNotifier<ConversationState> {
   /// observation, not a guessed completion.
   Future<void> _executeReadySteps(AgentRunResult run) async {
     for (final step in run.steps.where((item) => item.status == 'ready')) {
+      late final _DeviceExecution observed;
       try {
-        final observed = await _dispatchDeviceTool(step);
+        observed = await _dispatchDeviceTool(step);
+      } catch (error) {
+        try {
+          final reported = await _repo.reportStepResult(
+            runId: run.runId,
+            stepId: step.stepId,
+            status: 'failed',
+            error: error.toString(),
+          );
+          await _handleAgentResult(reported, executeReadySteps: false);
+        } catch (reportError) {
+          state = state.copyWith(
+            agentState: AgentState.unknown,
+            error: 'Résultat de l’action non confirmé : $reportError',
+          );
+        }
+        return;
+      }
+
+      try {
         final reported = await _repo.reportStepResult(
           runId: run.runId,
           stepId: step.stepId,
           status: observed.verified ? 'verified' : 'failed',
-          result: observed.verified ? {'verified': true, 'tool_id': step.toolId, ...observed.result} : const {},
-          error: observed.verified ? null : 'L’action Android n’a pas pu être lancée ou vérifiée.',
+          result: observed.verified
+              ? {'verified': true, 'tool_id': step.toolId, ...observed.result}
+              : const {},
+          error: observed.verified
+              ? null
+              : 'L’action Android n’a pas pu être lancée ou vérifiée.',
         );
         await _handleAgentResult(reported, executeReadySteps: false);
         if (reported.isTerminal ||
             reported.state == AgentState.waitingForConfirmation) {
           return;
         }
-      } catch (error) {
-        final reported = await _repo.reportStepResult(
-          runId: run.runId,
-          stepId: step.stepId,
-          status: 'failed',
-          error: error.toString(),
-        );
-        await _handleAgentResult(reported, executeReadySteps: false);
+      } catch (reportError) {
+        try {
+          final current = await _repo.getRunStatus(run.runId);
+          await _handleAgentResult(current, executeReadySteps: false);
+        } catch (statusError) {
+          state = state.copyWith(
+            agentState: AgentState.unknown,
+            error:
+                'L’action a été lancée, mais son résultat ne peut pas être confirmé : $statusError (erreur API initiale : $reportError)',
+          );
+        }
         return;
       }
     }
@@ -327,49 +401,88 @@ class ConversationNotifier extends StateNotifier<ConversationState> {
 
   Future<_DeviceExecution> _dispatchDeviceTool(PlannedStepModel step) async {
     final p = step.parameters;
-    Future<_DeviceExecution> simple(Future<bool> action) async => _DeviceExecution(await action);
+    Future<_DeviceExecution> simple(Future<bool> action) async =>
+        _DeviceExecution(await action);
     switch (step.toolId) {
       case 'open_app':
-        return simple(KorasPlatformBridge.openApp(appName: p['app_name'] as String? ?? ''));
+        return simple(
+          KorasPlatformBridge.openApp(appName: p['app_name'] as String? ?? ''),
+        );
       case 'open_maps':
-        return simple(KorasPlatformBridge.openMaps(destination: p['destination'] as String? ?? ''));
+        return simple(
+          KorasPlatformBridge.openMaps(
+            destination: p['destination'] as String? ?? '',
+          ),
+        );
       case 'open_url':
-        return simple(KorasPlatformBridge.openUrl(url: p['url'] as String? ?? ''));
+        return simple(
+          KorasPlatformBridge.openUrl(url: p['url'] as String? ?? ''),
+        );
       case 'search_web':
-        return simple(KorasPlatformBridge.searchWeb(query: p['query'] as String? ?? ''));
+        return simple(
+          KorasPlatformBridge.searchWeb(query: p['query'] as String? ?? ''),
+        );
       case 'call_contact':
-        if (!await _allow(Permission.contacts) || !await _allow(Permission.phone)) return const _DeviceExecution(false);
-        return simple(KorasPlatformBridge.callContact(
-          contactName: p['contact_name'] as String? ?? '',
-          phoneNumber: p['phone_number'] as String?,
-        ));
+        if (!await _allow(Permission.contacts) ||
+            !await _allow(Permission.phone))
+          return const _DeviceExecution(false);
+        return simple(
+          KorasPlatformBridge.callContact(
+            contactName: p['contact_name'] as String? ?? '',
+            phoneNumber: p['phone_number'] as String?,
+          ),
+        );
       case 'send_sms':
-        if (!await _allow(Permission.contacts) || !await _allow(Permission.sms)) return const _DeviceExecution(false);
-        return simple(KorasPlatformBridge.sendSms(
-          contactName: p['contact_name'] as String? ?? '',
-          phoneNumber: p['phone_number'] as String?,
-          message: p['message'] as String? ?? '',
-        ));
+        if (!await _allow(Permission.contacts) || !await _allow(Permission.sms))
+          return const _DeviceExecution(false);
+        return simple(
+          KorasPlatformBridge.sendSms(
+            contactName: p['contact_name'] as String? ?? '',
+            phoneNumber: p['phone_number'] as String?,
+            message: p['message'] as String? ?? '',
+          ),
+        );
       case 'create_reminder':
-        return simple(KorasPlatformBridge.createReminder(title: p['title'] as String? ?? ''));
+        return simple(
+          KorasPlatformBridge.createReminder(
+            title: p['title'] as String? ?? '',
+          ),
+        );
       case 'create_event':
-        return simple(KorasPlatformBridge.createEvent(
-          title: p['title'] as String? ?? '', description: p['description'] as String?,
-        ));
+        return simple(
+          KorasPlatformBridge.createEvent(
+            title: p['title'] as String? ?? '',
+            description: p['description'] as String?,
+          ),
+        );
       case 'read_notification':
+        if (!await KorasPlatformBridge.isNotificationListenerConnected()) {
+          throw StateError(
+            'Activez la lecture des notifications KORAS dans les réglages Android.',
+          );
+        }
         final notifications = await KorasPlatformBridge.readNotifications(
           limit: (p['limit'] as int?) ?? 3,
         );
-        return _DeviceExecution(notifications.isNotEmpty, {'notifications': notifications});
+        return _DeviceExecution(true, {'notifications': notifications});
       case 'search_contact':
-        if (!await _allow(Permission.contacts)) return const _DeviceExecution(false);
-        final contacts = await KorasPlatformBridge.searchContacts(p['query'] as String? ?? '');
-        return _DeviceExecution(contacts.isNotEmpty, {'contacts': contacts});
+        if (!await _allow(Permission.contacts))
+          return const _DeviceExecution(false);
+        final contacts = await KorasPlatformBridge.searchContacts(
+          p['query'] as String? ?? '',
+        );
+        return _DeviceExecution(true, {'contacts': contacts});
       case 'read_screen':
         final screen = await KorasPlatformBridge.readScreenContent();
-        return _DeviceExecution(screen['error'] == null, {'screen_content': screen});
+        return _DeviceExecution(screen['error'] == null, {
+          'screen_content': screen,
+        });
       case 'accessibility_click':
-        return simple(KorasPlatformBridge.performAccessibilityClick(p['label'] as String? ?? ''));
+        return simple(
+          KorasPlatformBridge.performAccessibilityClick(
+            p['label'] as String? ?? '',
+          ),
+        );
       // Notification reading and financial services require dedicated Android
       // or partner connectors and are deliberately not simulated.
       default:
@@ -387,7 +500,9 @@ class ConversationNotifier extends StateNotifier<ConversationState> {
   Future<bool> confirmCurrentStep() async {
     final result = state.lastResult;
     final runId = state.currentRunId;
-    if (result == null || runId == null || result.awaitingConfirmationStepId == null) {
+    if (result == null ||
+        runId == null ||
+        result.awaitingConfirmationStepId == null) {
       return false;
     }
 
@@ -397,9 +512,10 @@ class ConversationNotifier extends StateNotifier<ConversationState> {
     );
     if (step.requiresBiometric) {
       try {
-        biometricAuthenticated = await KorasPlatformBridge.authenticateBiometric(
-          reason: 'Confirmer ${step.toolName}',
-        );
+        biometricAuthenticated =
+            await KorasPlatformBridge.authenticateBiometric(
+              reason: 'Confirmer ${step.toolName}',
+            );
       } catch (error) {
         state = state.copyWith(error: error.toString());
         await _speak("L'authentification biométrique n'est pas disponible.");
@@ -443,8 +559,15 @@ class ConversationNotifier extends StateNotifier<ConversationState> {
     try {
       final cancelled = await _repo.cancelRun(runId);
       await _handleAgentResult(cancelled);
-    } catch (_) {
-      state = state.copyWith(agentState: AgentState.cancelled);
+    } catch (error) {
+      state = state.copyWith(
+        agentState: AgentState.unknown,
+        error: 'Annulation non confirmée par le serveur : $error',
+      );
+      await _speak(
+        'L’annulation n’a pas pu être confirmée. Vérifiez le statut de l’action.',
+      );
+      return;
     }
     await _speak('Opération annulée.');
   }
@@ -452,7 +575,9 @@ class ConversationNotifier extends StateNotifier<ConversationState> {
   // ─── TTS ──────────────────────────────────────────────────────────────────
 
   Future<void> _speak(String text) async {
-    if (text.isEmpty) return;
+    if (text.isEmpty || !_voiceFeedbackAlways) return;
+    await _tts.setLanguage(_ttsLanguage);
+    await _tts.setSpeechRate(_voiceSpeed);
     state = state.copyWith(isSpeaking: true);
     await _tts.speak(text);
   }

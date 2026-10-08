@@ -20,4 +20,10 @@ async def check_tool_health(tool_id: str):
     tool = tool_registry.get(tool_id)
     if not tool:
         raise HTTPException(status_code=404, detail="Outil non trouvé.")
-    return {"tool_id": tool_id, "status": "healthy", "provider": tool.provider}
+    if not tool.enabled:
+        state = "disabled"
+    elif tool.provider == "device":
+        state = "device_required"
+    else:
+        state = "registered"
+    return {"tool_id": tool_id, "status": state, "provider": tool.provider}

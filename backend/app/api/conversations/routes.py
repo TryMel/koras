@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException
+from datetime import datetime, timezone
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,12 +12,12 @@ from app.core.dependencies import get_current_user
 router = APIRouter(prefix="/conversations", tags=["Conversations"])
 
 class CreateConversationRequest(BaseModel):
-    title: Optional[str] = "Nouvelle conversation"
+    title: Optional[str] = Field(default="Nouvelle conversation", max_length=256)
 
 class SendMessageRequest(BaseModel):
-    content: str
-    content_type: str = "text"  # text, audio_transcript
-    language: str = "fr"
+    content: str = Field(min_length=1, max_length=8000)
+    content_type: str = Field(default="text", pattern="^(text|audio_transcript|system_notice)$")
+    language: str = Field(default="fr", min_length=2, max_length=16)
 
 class MessageResponse(BaseModel):
     id: str
@@ -41,7 +42,7 @@ async def create_conversation(
 ):
     conv = Conversation(
         user_id=current_user.id,
-        title=req.title
+        title=req.title or "Nouvelle conversation"
     )
     db.add(conv)
     await db.commit()
@@ -78,6 +79,7 @@ async def add_message(
         content_type=req.content_type,
         language=req.language
     )
+    conv.updated_at = datetime.now(timezone.utc)
     db.add(message)
     await db.commit()
     await db.refresh(message)
@@ -133,8 +135,8 @@ async def get_conversation(
 
 @router.get("", response_model=List[ConversationResponse])
 async def list_conversations(
-    skip: int = 0,
-    limit: int = 20,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):

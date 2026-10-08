@@ -4,8 +4,10 @@ Device-provider contracts describe commands dispatched by the trusted mobile
 client; this registry does not execute side effects.
 """
 
+import math
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel, Field
+from app.core.config import settings
 
 class ToolContract(BaseModel):
     tool_id: str
@@ -18,6 +20,7 @@ class ToolContract(BaseModel):
     permissions: List[str] = Field(default_factory=list)
     requires_confirmation: bool = False
     requires_authentication: bool = False
+    enabled: bool = True
     supports_preview: bool = True
     supports_idempotency: bool = False
     supports_rollback: bool = False
@@ -40,20 +43,41 @@ class ToolRegistry:
         return list(self._tools.values())
 
     def validate_parameters(self, tool: ToolContract, parameters: Dict[str, Any]) -> Optional[str]:
-        """Minimal deterministic schema gate before policy or execution."""
+        """Validate the JSON-schema subset used by registered tools."""
         schema = tool.input_schema
         properties = schema.get("properties", {})
-        for name in schema.get("required", []):
-            if parameters.get(name) in (None, ""):
+        required = schema.get("required", [])
+        for name in required:
+            if name not in parameters or parameters[name] is None or parameters[name] == "":
                 return f"Paramètre requis manquant : {name}."
         for name, value in parameters.items():
-            expected = properties.get(name, {}).get("type")
-            if expected == "string" and not isinstance(value, str):
-                return f"Paramètre invalide : {name} doit être un texte."
-            if expected == "number" and (not isinstance(value, (int, float)) or isinstance(value, bool)):
-                return f"Paramètre invalide : {name} doit être un nombre."
-            if expected == "integer" and (not isinstance(value, int) or isinstance(value, bool)):
-                return f"Paramètre invalide : {name} doit être un entier."
+            property_schema = properties.get(name)
+            if property_schema is None:
+                return f"Paramètre inattendu : {name}."
+            expected = property_schema.get("type")
+            if expected == "string":
+                if not isinstance(value, str):
+                    return f"Paramètre invalide : {name} doit être un texte."
+                if len(value) < property_schema.get("minLength", 0):
+                    return f"Paramètre invalide : {name} est trop court."
+                if len(value) > property_schema.get("maxLength", 8000):
+                    return f"Paramètre invalide : {name} est trop long."
+            elif expected == "number":
+                if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value):
+                    return f"Paramètre invalide : {name} doit être un nombre fini."
+                if "minimum" in property_schema and value < property_schema["minimum"]:
+                    return f"Paramètre invalide : {name} est inférieur au minimum."
+            elif expected == "integer":
+                if not isinstance(value, int) or isinstance(value, bool):
+                    return f"Paramètre invalide : {name} doit être un entier."
+            elif expected == "boolean" and not isinstance(value, bool):
+                return f"Paramètre invalide : {name} doit être un booléen."
+            elif expected == "array" and not isinstance(value, list):
+                return f"Paramètre invalide : {name} doit être une liste."
+            elif expected == "object" and not isinstance(value, dict):
+                return f"Paramètre invalide : {name} doit être un objet."
+            if "enum" in property_schema and value not in property_schema["enum"]:
+                return f"Paramètre invalide : {name} n'est pas une valeur autorisée."
         return None
 
     def _register_default_tools(self):
@@ -228,6 +252,7 @@ class ToolRegistry:
             permissions=[],
             requires_confirmation=True,
             requires_authentication=True,
+            enabled=settings.ENABLE_FINANCIAL_CONNECTORS,
             supports_preview=True,
             supports_idempotency=True,
             supports_rollback=False,
