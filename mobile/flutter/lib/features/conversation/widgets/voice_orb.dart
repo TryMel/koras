@@ -17,7 +17,8 @@ class VoiceOrb extends StatefulWidget {
   State<VoiceOrb> createState() => _VoiceOrbState();
 }
 
-class _VoiceOrbState extends State<VoiceOrb> with SingleTickerProviderStateMixin {
+class _VoiceOrbState extends State<VoiceOrb>
+    with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _scaleAnimation;
   late Animation<double> _glowAnimation;
@@ -29,12 +30,14 @@ class _VoiceOrbState extends State<VoiceOrb> with SingleTickerProviderStateMixin
       vsync: this,
       duration: const Duration(milliseconds: 1200),
     );
-    _scaleAnimation = Tween<double>(begin: 1.0, end: 1.15)
-        .chain(CurveTween(curve: Curves.easeInOut))
-        .animate(_controller);
-    _glowAnimation = Tween<double>(begin: 0.3, end: 1.0)
-        .chain(CurveTween(curve: Curves.easeInOut))
-        .animate(_controller);
+    _scaleAnimation = Tween<double>(
+      begin: 1.0,
+      end: 1.15,
+    ).chain(CurveTween(curve: Curves.easeInOut)).animate(_controller);
+    _glowAnimation = Tween<double>(
+      begin: 0.3,
+      end: 1.0,
+    ).chain(CurveTween(curve: Curves.easeInOut)).animate(_controller);
   }
 
   @override
@@ -62,36 +65,56 @@ class _VoiceOrbState extends State<VoiceOrb> with SingleTickerProviderStateMixin
         return Semantics(
           button: true,
           label: widget.isListening
-              ? 'Arrêter l\'écoute. KORAS vous écoute.'
-              : 'Appuyez pour parler à KORAS',
+              ? 'Arrêter l’écoute de KORAS'
+              : 'Démarrer une session vocale KORAS',
           onTap: widget.onPressed,
-          child: GestureDetector(
-            onTap: widget.onPressed,
-            child: Transform.scale(
-              scale: widget.isListening ? _scaleAnimation.value : 1.0,
-              child: Container(
-                width: 64,
-                height: 64,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: RadialGradient(
-                    colors: widget.isListening
-                        ? [Colors.red.shade400, Colors.red.shade700]
-                        : [const Color(0xFF6C63FF), const Color(0xFF4B44CC)],
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: (widget.isListening ? Colors.red : const Color(0xFF6C63FF))
-                          .withOpacity(widget.isListening ? _glowAnimation.value * 0.6 : 0.3),
-                      blurRadius: widget.isListening ? 24 : 12,
-                      spreadRadius: widget.isListening ? 4 : 2,
+          child: Tooltip(
+            message: widget.isListening
+                ? 'Arrêter la session vocale'
+                : 'Démarrer une session vocale',
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: widget.onPressed,
+                child: Transform.scale(
+                  scale: widget.isListening ? _scaleAnimation.value : 1.0,
+                  child: Container(
+                    width: 58,
+                    height: 58,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: widget.isListening
+                            ? const [Color(0xFFFF8D9B), Color(0xFFD9586D)]
+                            : const [Color(0xFFB8A7FF), Color(0xFF7464E8)],
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color:
+                              (widget.isListening
+                                      ? const Color(0xFFFF7188)
+                                      : const Color(0xFF8B7AF0))
+                                  .withOpacity(
+                                    widget.isListening
+                                        ? _glowAnimation.value * 0.5
+                                        : 0.3,
+                                  ),
+                          blurRadius: widget.isListening ? 22 : 14,
+                          spreadRadius: widget.isListening ? 3 : 1,
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-                child: Icon(
-                  widget.isListening ? Icons.stop_rounded : Icons.mic_rounded,
-                  color: Colors.white,
-                  size: 30,
+                    child: Icon(
+                      widget.isListening
+                          ? Icons.stop_rounded
+                          : Icons.mic_rounded,
+                      color: Colors.white,
+                      size: 26,
+                    ),
+                  ),
                 ),
               ),
             ),

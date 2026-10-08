@@ -168,6 +168,46 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
               ),
             ),
           if (_saving) const LinearProgressIndicator(),
+          _buildSectionHeader('Session vocale'),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1A1A2E),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.white12),
+            ),
+            child: const Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.mic_none_rounded, color: Color(0xFFC3B9FF)),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Écoute à la demande',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      SizedBox(height: 6),
+                      Text(
+                        'Le microphone ne s’active que lorsque vous appuyez sur le bouton vocal. Une notification reste visible pendant la session; utilisez-la pour arrêter l’écoute.',
+                        style: TextStyle(
+                          color: Colors.white54,
+                          fontSize: 13,
+                          height: 1.4,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
           // Section Accessibilité & Vulnérabilité
           _buildSectionHeader('Accessibilité & Protection'),
           _buildActionTile(

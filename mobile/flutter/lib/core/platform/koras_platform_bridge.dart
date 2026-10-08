@@ -17,6 +17,29 @@ class KorasPlatformBridge {
     AppConfig.audioChannelName,
   );
 
+  static Stream<Map<String, dynamic>> get backgroundSessionEvents =>
+      _eventChannel.receiveBroadcastStream().map(
+        (event) => Map<String, dynamic>.from(event as Map),
+      );
+
+  static Future<void> startBackgroundVoiceSession() async {
+    final started = await _methodChannel.invokeMethod<bool>(
+      'startBackgroundVoiceSession',
+    );
+    if (started != true) {
+      throw StateError('Le service vocal Android n’a pas démarré.');
+    }
+  }
+
+  static Future<void> stopBackgroundVoiceSession() async {
+    final stopped = await _methodChannel.invokeMethod<bool>(
+      'stopBackgroundVoiceSession',
+    );
+    if (stopped != true) {
+      throw StateError('Le service vocal Android ne s’est pas arrêté.');
+    }
+  }
+
   // ─── PHONE CALLS ────────────────────────────────────────────────────────────
 
   /// Initiate a phone call to a resolved number (Section 35 - N1)
@@ -233,8 +256,6 @@ class KorasPlatformBridge {
 
   /// Stream for real-time Kotlin events (voice detection, accessibility, etc.)
   static Stream<Map<String, dynamic>> get eventStream {
-    return _eventChannel.receiveBroadcastStream().map(
-      (event) => Map<String, dynamic>.from(event as Map),
-    );
+    return backgroundSessionEvents;
   }
 }

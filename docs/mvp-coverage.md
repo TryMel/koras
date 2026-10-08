@@ -14,6 +14,7 @@ aucun résultat n’est simulé par le backend.
 | Informations système | batterie, réseau, modèle, version et identifiant Android collectés localement pour le contexte |
 | Lecture/action accessible | `AccessibilityService` opt-in : lecture sémantique et clic strict par libellé, après confirmation |
 | Historique, états, confirmation, annulation, répétition, erreurs, hors-ligne | API conversations/audit, états agent, feuille de confirmation, annulation, commande « répète » et erreurs typées; les nouvelles commandes sont refusées hors ligne sans prétendre à une exécution locale |
+| Session vocale en arrière-plan | Écoute uniquement après appui explicite; service Android de premier plan avec notification persistante et action d’arrêt. Les permissions micro et notifications sont demandées à l’activation, pas au lancement de l’application. |
 | Authentification, session, appareils | inscription/connexion JWT, sessions persistées, enregistrement/révocation d’appareil, trust check par identifiant Android |
 | Permissions, validation, risque, audit, anomalie | permissions Android à l’exécution, validation des contrats d’outils, moteur de risque/politique, audit persistant et alerte après trois échecs consécutifs |
 
@@ -27,6 +28,12 @@ aucun résultat n’est simulé par le backend.
 - La lecture des notifications et l’accessibilité exigent l’activation volontaire
   des services correspondants dans les réglages Android; l’écran Paramètres
   KORAS indique leur état et ouvre les pages Android nécessaires.
+- La session vocale en arrière-plan n’est pas une écoute permanente ni un mot
+  de réveil : elle démarre uniquement à la demande, affiche une notification
+  persistante et peut être arrêtée depuis cette notification. Android et le
+  moteur de reconnaissance peuvent interrompre une session (économie d’énergie,
+  disponibilité du service vocal); le maintien garanti de l’agent ou des actions
+  après la fin de la reconnaissance n’est pas couvert par ce MVP.
 
 ## Validation automatisée
 
@@ -40,3 +47,6 @@ aucun résultat n’est simulé par le backend.
   téléphone. Les permissions Android, les intents et les services
   d'accessibilité/notifications nécessitent encore une validation sur appareil
   ou émulateur.
+- `mobile/flutter/test/widget_test.dart` couvre le démarrage UI, la commande de
+  session vocale et l’affichage des confirmations sensibles; ces tests ne
+  remplacent pas un essai d’écoute en arrière-plan sur un appareil Android.

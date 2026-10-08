@@ -56,28 +56,89 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     });
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0D0D0D),
+      backgroundColor: const Color(0xFF10111D),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF1A1A2E),
+        backgroundColor: const Color(0xFF10111D),
         elevation: 0,
-        title: const Text(
-          'KORAS',
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: 22,
-          ),
+        titleSpacing: 20,
+        title: Row(
+          children: [
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                gradient: const LinearGradient(
+                  colors: [Color(0xFFB8A7FF), Color(0xFF7464E8)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+              ),
+              child: const Icon(
+                Icons.auto_awesome,
+                color: Colors.white,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'KORAS',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 17,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+                Text(
+                  'Votre assistant',
+                  style: TextStyle(color: Color(0xFF9B9BB0), fontSize: 12),
+                ),
+              ],
+            ),
+          ],
         ),
         actions: [
-          // Online indicator (Section 29)
           Padding(
             padding: const EdgeInsets.only(right: 16),
-            child: Icon(
-              conversationState.isOnline ? Icons.wifi : Icons.wifi_off,
-              color: conversationState.isOnline ? Colors.green : Colors.red,
-              semanticLabel: conversationState.isOnline
-                  ? 'Connecté'
-                  : 'Hors ligne',
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 7,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1B1C2B),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.white.withOpacity(0.08)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      conversationState.isOnline ? Icons.wifi : Icons.wifi_off,
+                      color: conversationState.isOnline
+                          ? const Color(0xFF88D6B0)
+                          : const Color(0xFFFF9A9A),
+                      size: 15,
+                      semanticLabel: conversationState.isOnline
+                          ? 'Connecté'
+                          : 'Hors ligne',
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      conversationState.isOnline ? 'En ligne' : 'Hors ligne',
+                      style: const TextStyle(
+                        color: Color(0xFFD0D0DE),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
         ],
@@ -85,61 +146,68 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // Agent Status Bar (Section 30)
             AgentStatusBar(state: conversationState.agentState),
-
-            // Messages List
             Expanded(
               child: conversationState.messages.isEmpty
                   ? _buildEmptyState()
                   : ListView.builder(
                       controller: _scrollController,
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 8,
+                        horizontal: 20,
+                        vertical: 12,
                       ),
                       itemCount: conversationState.messages.length,
-                      itemBuilder: (context, index) {
-                        final msg = conversationState.messages[index];
-                        return MessageBubble(message: msg);
-                      },
+                      itemBuilder: (context, index) => MessageBubble(
+                        message: conversationState.messages[index],
+                      ),
                     ),
             ),
-
-            // Live transcript while listening
             if (conversationState.currentTranscript?.isNotEmpty == true)
               Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                padding: const EdgeInsets.all(12),
+                margin: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: Colors.white10,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  conversationState.currentTranscript!,
-                  style: const TextStyle(
-                    color: Colors.white60,
-                    fontStyle: FontStyle.italic,
+                  color: const Color(0xFF242239),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(
+                    color: const Color(0xFF8174E8).withOpacity(0.35),
                   ),
                 ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.graphic_eq, color: Color(0xFFB8A7FF)),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        conversationState.currentTranscript!,
+                        style: const TextStyle(
+                          color: Color(0xFFE6E3F5),
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-
             if (conversationState.error != null)
               Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 4,
-                ),
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
                 child: Semantics(
                   liveRegion: true,
-                  child: Text(
-                    conversationState.error!,
-                    style: const TextStyle(color: Colors.orangeAccent),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF3A2229),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Text(
+                      conversationState.error!,
+                      style: const TextStyle(color: Color(0xFFFFB8B8)),
+                    ),
                   ),
                 ),
               ),
-
-            // Voice Orb + Text Input Row
             _buildInputArea(conversationState, notifier),
           ],
         ),
@@ -154,23 +222,52 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.mic_none, size: 80, color: Color(0xFF6C63FF)),
-            const SizedBox(height: 24),
-            const Text(
-              'Bonjour,\nque souhaitez-vous faire ?',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.w600,
-                color: Colors.white,
-                height: 1.4,
+            Container(
+              width: 112,
+              height: 112,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: const RadialGradient(
+                  colors: [Color(0xFF393353), Color(0xFF1B1B2A)],
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF8B7AF0).withOpacity(0.18),
+                    blurRadius: 34,
+                    spreadRadius: 4,
+                  ),
+                ],
+              ),
+              child: const Icon(
+                Icons.auto_awesome,
+                size: 42,
+                color: Color(0xFFC7BCFF),
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 30),
             const Text(
-              'Appuyez sur le microphone ou tapez votre demande',
+              'Bonjour, que souhaitez-vous faire ?',
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white54, fontSize: 15),
+              style: TextStyle(
+                fontSize: 25,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFFF5F3FC),
+                height: 1.35,
+                letterSpacing: -0.4,
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 40),
+              child: Text(
+                'Parlez naturellement ou écrivez votre demande. Je vous accompagne étape par étape.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Color(0xFFAAA9BB),
+                  fontSize: 15,
+                  height: 1.55,
+                ),
+              ),
             ),
           ],
         ),
@@ -189,30 +286,34 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
         state.agentState == AgentState.executing;
 
     return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: const BoxDecoration(
-        color: Color(0xFF1A1A2E),
-        border: Border(top: BorderSide(color: Colors.white12)),
-      ),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+      decoration: const BoxDecoration(color: Color(0xFF10111D)),
       child: Row(
         children: [
-          // Text input
           Expanded(
             child: TextField(
               controller: _textController,
               style: const TextStyle(color: Colors.white),
               decoration: InputDecoration(
-                hintText: 'Tapez ou parlez…',
-                hintStyle: const TextStyle(color: Colors.white38),
+                hintText: 'Écrivez votre demande…',
+                hintStyle: const TextStyle(color: Color(0xFF858598)),
                 filled: true,
-                fillColor: Colors.white10,
+                fillColor: const Color(0xFF1B1C2B),
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(24),
+                  borderRadius: BorderRadius.circular(22),
                   borderSide: BorderSide.none,
                 ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(22),
+                  borderSide: BorderSide(color: Colors.white.withOpacity(0.07)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(22),
+                  borderSide: const BorderSide(color: Color(0xFF8274E8)),
+                ),
                 contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 14,
+                  horizontal: 18,
+                  vertical: 16,
                 ),
               ),
               onChanged: (_) => setState(() {}),
@@ -226,18 +327,24 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
           ),
           const SizedBox(width: 12),
 
-          // Send button (text)
           if (_textController.text.isNotEmpty)
-            IconButton(
-              icon: const Icon(Icons.send_rounded, color: Color(0xFF6C63FF)),
-              onPressed: () {
-                notifier.processInput(_textController.text.trim());
-                _textController.clear();
-              },
-              tooltip: 'Envoyer',
+            Padding(
+              padding: const EdgeInsets.only(left: 8),
+              child: IconButton.filled(
+                style: IconButton.styleFrom(
+                  backgroundColor: const Color(0xFF7464E8),
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(48, 48),
+                ),
+                icon: const Icon(Icons.arrow_upward_rounded),
+                onPressed: () {
+                  notifier.processInput(_textController.text.trim());
+                  _textController.clear();
+                },
+                tooltip: 'Envoyer',
+              ),
             ),
 
-          // Voice Orb (Section 32)
           VoiceOrb(
             isListening: state.isListening,
             isActive: isActive,

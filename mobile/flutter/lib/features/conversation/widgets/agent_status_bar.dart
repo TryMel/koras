@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../../../domain/models/agent_models.dart';
 
 class AgentStatusBar extends StatelessWidget {
@@ -14,7 +15,7 @@ class AgentStatusBar extends StatelessWidget {
       duration: const Duration(milliseconds: 300),
       width: double.infinity,
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-      color: config.color.withOpacity(0.15),
+      color: const Color(0xFF1B1C2B),
       child: Semantics(
         label: 'État de KORAS: ${config.label}',
         liveRegion: true,
@@ -44,37 +45,106 @@ class AgentStatusBar extends StatelessWidget {
   _StatusConfig _configFor(AgentState state) {
     switch (state) {
       case AgentState.idle:
-        return _StatusConfig(Colors.white38, Icons.radio_button_unchecked, 'Prêt');
+        return _StatusConfig(
+          const Color(0xFFB3B2C1),
+          Icons.radio_button_unchecked,
+          'Prêt',
+        );
       case AgentState.listening:
-        return _StatusConfig(Colors.red, Icons.mic, 'À l\'écoute…', showPulse: true);
+        return _StatusConfig(
+          const Color(0xFFFF929C),
+          Icons.mic,
+          'À l\'écoute…',
+          showPulse: true,
+        );
       case AgentState.understanding:
-        return _StatusConfig(Colors.blue, Icons.psychology, 'Analyse de la demande…', showPulse: true);
+        return _StatusConfig(
+          const Color(0xFF91B9FF),
+          Icons.psychology,
+          'Analyse de la demande…',
+          showPulse: true,
+        );
       case AgentState.thinking:
-        return _StatusConfig(const Color(0xFF6C63FF), Icons.auto_awesome, 'Planification…', showPulse: true);
+        return _StatusConfig(
+          const Color(0xFFB8A7FF),
+          Icons.auto_awesome,
+          'Planification…',
+          showPulse: true,
+        );
       case AgentState.waitingForClarification:
-        return _StatusConfig(Colors.orange, Icons.help_outline, 'Précision requise');
+        return _StatusConfig(
+          const Color(0xFFFFC078),
+          Icons.help_outline,
+          'Précision requise',
+        );
       case AgentState.waitingForConfirmation:
-        return _StatusConfig(Colors.amber, Icons.verified_user_outlined, 'En attente de confirmation');
+        return _StatusConfig(
+          const Color(0xFFFFD479),
+          Icons.verified_user_outlined,
+          'En attente de confirmation',
+        );
       case AgentState.executing:
-        return _StatusConfig(Colors.lightBlue, Icons.play_circle_outline, 'Exécution en cours…', showPulse: true);
+        return _StatusConfig(
+          const Color(0xFF7DD3E8),
+          Icons.play_circle_outline,
+          'Exécution en cours…',
+          showPulse: true,
+        );
       case AgentState.verifying:
-        return _StatusConfig(Colors.cyan, Icons.check_circle_outline, 'Vérification…', showPulse: true);
+        return _StatusConfig(
+          const Color(0xFF78D9D0),
+          Icons.check_circle_outline,
+          'Vérification…',
+          showPulse: true,
+        );
       case AgentState.success:
-        return _StatusConfig(Colors.green, Icons.check_circle, 'Succès');
+        return _StatusConfig(
+          const Color(0xFF88D6B0),
+          Icons.check_circle,
+          'Succès',
+        );
       case AgentState.partialSuccess:
-        return _StatusConfig(Colors.lime, Icons.check_circle_outline, 'Succès partiel');
+        return _StatusConfig(
+          const Color(0xFFC4D889),
+          Icons.check_circle_outline,
+          'Succès partiel',
+        );
       case AgentState.failed:
-        return _StatusConfig(Colors.red, Icons.error_outline, 'Échec');
+        return _StatusConfig(
+          const Color(0xFFFF929C),
+          Icons.error_outline,
+          'Échec',
+        );
       case AgentState.unknown:
-        return _StatusConfig(Colors.grey, Icons.help, 'État inconnu');
+        return _StatusConfig(
+          const Color(0xFFB3B2C1),
+          Icons.help,
+          'État inconnu',
+        );
       case AgentState.offline:
-        return _StatusConfig(Colors.orange, Icons.wifi_off, 'Hors ligne');
+        return _StatusConfig(
+          const Color(0xFFFFC078),
+          Icons.wifi_off,
+          'Hors ligne',
+        );
       case AgentState.permissionDenied:
-        return _StatusConfig(Colors.red, Icons.block, 'Permission refusée');
+        return _StatusConfig(
+          const Color(0xFFFF929C),
+          Icons.block,
+          'Permission refusée',
+        );
       case AgentState.cancelled:
-        return _StatusConfig(Colors.white38, Icons.cancel_outlined, 'Annulé');
+        return _StatusConfig(
+          const Color(0xFFB3B2C1),
+          Icons.cancel_outlined,
+          'Annulé',
+        );
       case AgentState.timedOut:
-        return _StatusConfig(Colors.deepOrange, Icons.timer_off, 'Délai dépassé');
+        return _StatusConfig(
+          const Color(0xFFFFA57D),
+          Icons.timer_off,
+          'Délai dépassé',
+        );
     }
   }
 }
@@ -85,7 +155,12 @@ class _StatusConfig {
   final String label;
   final bool showPulse;
 
-  const _StatusConfig(this.color, this.icon, this.label, {this.showPulse = false});
+  const _StatusConfig(
+    this.color,
+    this.icon,
+    this.label, {
+    this.showPulse = false,
+  });
 }
 
 class _PulseIndicator extends StatefulWidget {
@@ -124,10 +199,7 @@ class _PulseIndicatorState extends State<_PulseIndicator>
       child: Container(
         width: 8,
         height: 8,
-        decoration: BoxDecoration(
-          color: widget.color,
-          shape: BoxShape.circle,
-        ),
+        decoration: BoxDecoration(color: widget.color, shape: BoxShape.circle),
       ),
     );
   }

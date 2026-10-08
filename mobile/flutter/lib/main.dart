@@ -16,7 +16,8 @@ void main() async {
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: Brightness.light,
-    systemNavigationBarColor: Color(0xFF1A1A2E),
+    systemNavigationBarColor: Color(0xFF10111D),
+    systemNavigationBarIconBrightness: Brightness.light,
   ));
 
   runApp(const ProviderScope(child: KorasApp()));
@@ -34,7 +35,7 @@ class KorasApp extends StatelessWidget {
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF6C63FF),
+          seedColor: const Color(0xFF7464E8),
           brightness: Brightness.dark,
           surface: const Color(0xFF0D0D0D),
         ),

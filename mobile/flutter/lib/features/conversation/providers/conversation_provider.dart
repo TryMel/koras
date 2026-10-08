@@ -110,8 +110,24 @@ class ConversationNotifier extends StateNotifier<ConversationState> {
   double _voiceSpeed = 0.85;
   String _speechLocale = 'fr_FR';
   String _ttsLanguage = 'fr-FR';
+  late final StreamSubscription<Map<String, dynamic>>
+  _backgroundEventSubscription;
+  bool _voiceSessionActive = false;
 
   ConversationNotifier(this._repo) : super(const ConversationState()) {
+    _backgroundEventSubscription = KorasPlatformBridge.backgroundSessionEvents
+        .listen(
+          (event) {
+            if (event['type'] == 'voice_session_stopped') {
+              _stopListeningFromNotification();
+            }
+          },
+          onError: (Object error) {
+            state = state.copyWith(
+              error: 'État de la session en arrière-plan indisponible : $error',
+            );
+          },
+        );
     _initAudio();
   }
 
@@ -122,22 +138,7 @@ class ConversationNotifier extends StateNotifier<ConversationState> {
     _ttsLanguage = configuredLocale == 'en' ? 'en-US' : 'fr-FR';
     _voiceSpeed = preferences.getDouble('koras_voice_speed') ?? 0.85;
     _voiceFeedbackAlways = preferences.getBool('koras_voice_feedback') ?? true;
-    final microphonePermission = await Permission.microphone.request();
-    if (!microphonePermission.isGranted) {
-      state = state.copyWith(
-        agentState: AgentState.permissionDenied,
-        error: 'Autorisation du microphone refusée.',
-      );
-      return;
-    }
-    _sttAvailable = await _stt.initialize(
-      onStatus: (status) {
-        if (status == 'done' || status == 'notListening') {
-          _onSpeechDone();
-        }
-      },
-      onError: (error) => _handleSpeechError(error.errorMsg),
-    );
+    _sttAvailable = await _initializeSpeechRecognition();
 
     await _tts.setLanguage(_ttsLanguage);
     await _tts.setSpeechRate(_voiceSpeed);
@@ -157,10 +158,41 @@ class ConversationNotifier extends StateNotifier<ConversationState> {
       state = state.copyWith(isSpeaking: false);
     }
 
-    if (!_sttAvailable) {
+    final microphonePermission = await Permission.microphone.request();
+    if (!microphonePermission.isGranted) {
       state = state.copyWith(
-        error: 'Microphone non disponible. Vérifiez les permissions.',
+        error: 'Autorisez le microphone pour démarrer une session vocale.',
         agentState: AgentState.permissionDenied,
+      );
+      return;
+    }
+
+    final notificationPermission = await Permission.notification.request();
+    if (!notificationPermission.isGranted) {
+      state = state.copyWith(
+        error: 'Autorisez les notifications pour afficher et arrêter la session vocale en arrière-plan.',
+        agentState: AgentState.permissionDenied,
+      );
+      return;
+    }
+
+    try {
+      if (!_sttAvailable) {
+        _sttAvailable = await _initializeSpeechRecognition();
+      }
+      if (!_sttAvailable) {
+        state = state.copyWith(
+          error: 'Le service de reconnaissance vocale est indisponible.',
+          agentState: AgentState.permissionDenied,
+        );
+        return;
+      }
+      await KorasPlatformBridge.startBackgroundVoiceSession();
+      _voiceSessionActive = true;
+    } catch (error) {
+      state = state.copyWith(
+        error: 'Impossible de démarrer la session vocale : $error',
+        agentState: AgentState.failed,
       );
       return;
     }
@@ -172,30 +204,49 @@ class ConversationNotifier extends StateNotifier<ConversationState> {
       error: null,
     );
 
-    await _stt.listen(
-      onResult: (result) {
-        state = state.copyWith(currentTranscript: result.recognizedWords);
-        if (result.finalResult && result.recognizedWords.isNotEmpty) {
-          processInput(result.recognizedWords);
-        }
-      },
-      localeId: _speechLocale,
-      cancelOnError: false,
-      pauseFor: const Duration(seconds: 3),
-    );
+    try {
+      await _stt.listen(
+        onResult: (result) {
+          state = state.copyWith(currentTranscript: result.recognizedWords);
+          if (result.finalResult && result.recognizedWords.isNotEmpty) {
+            processInput(result.recognizedWords);
+          }
+        },
+        localeId: _speechLocale,
+        cancelOnError: false,
+        pauseFor: const Duration(seconds: 3),
+      );
+    } catch (error) {
+      await _stopBackgroundVoiceSession();
+      state = state.copyWith(
+        agentState: AgentState.failed,
+        isListening: false,
+        error: 'La reconnaissance vocale n’a pas démarré : $error',
+      );
+    }
   }
 
   Future<void> stopListening() async {
+    final transcript = state.currentTranscript?.trim() ?? '';
     await _stt.stop();
-    state = state.copyWith(isListening: false);
-    if (state.currentTranscript?.isNotEmpty == true) {
-      await processInput(state.currentTranscript!);
+    await _stopBackgroundVoiceSession();
+    state = state.copyWith(isListening: false, currentTranscript: '');
+    if (transcript.isNotEmpty) {
+      await processInput(transcript);
     }
   }
 
   void _onSpeechDone() {
-    if (state.isListening && state.currentTranscript?.isEmpty != false) {
-      state = state.copyWith(isListening: false, agentState: AgentState.idle);
+    if (!state.isListening) return;
+    final transcript = state.currentTranscript?.trim() ?? '';
+    if (transcript.isNotEmpty) {
+      unawaited(processInput(transcript));
+    } else {
+      state = state.copyWith(
+        isListening: false,
+        currentTranscript: '',
+        agentState: AgentState.idle,
+      );
     }
   }
 
@@ -204,6 +255,40 @@ class ConversationNotifier extends StateNotifier<ConversationState> {
       isListening: false,
       agentState: AgentState.failed,
       error: 'Erreur microphone: $errorMsg',
+    );
+    unawaited(_stopBackgroundVoiceSession());
+  }
+
+  Future<bool> _initializeSpeechRecognition() => _stt.initialize(
+    onStatus: (status) {
+      if (status == 'done' || status == 'notListening') {
+        _onSpeechDone();
+        unawaited(_stopBackgroundVoiceSession());
+      }
+    },
+    onError: (error) => _handleSpeechError(error.errorMsg),
+  );
+
+  Future<void> _stopBackgroundVoiceSession() async {
+    if (!_voiceSessionActive) return;
+    try {
+      await KorasPlatformBridge.stopBackgroundVoiceSession();
+      _voiceSessionActive = false;
+    } catch (error) {
+      state = state.copyWith(
+        error: 'Arrêt de la session vocale non confirmé : $error',
+      );
+    }
+  }
+
+  void _stopListeningFromNotification() {
+    _voiceSessionActive = false;
+    if (!state.isListening) return;
+    unawaited(_stt.cancel());
+    state = state.copyWith(
+      isListening: false,
+      currentTranscript: '',
+      agentState: AgentState.idle,
     );
   }
 
@@ -239,7 +324,7 @@ class ConversationNotifier extends StateNotifier<ConversationState> {
       agentState: AgentState.understanding,
       isListening: false,
       messages: [...state.messages, userMsg],
-      currentTranscript: null,
+      currentTranscript: '',
       error: null,
     );
 
@@ -595,8 +680,23 @@ class ConversationNotifier extends StateNotifier<ConversationState> {
 
   @override
   void dispose() {
+    unawaited(_backgroundEventSubscription.cancel());
     _stt.stop();
     _tts.stop();
+    if (_voiceSessionActive) {
+      unawaited(
+        KorasPlatformBridge.stopBackgroundVoiceSession().catchError((
+          Object error,
+        ) {
+          FlutterError.reportError(
+            FlutterErrorDetails(
+              exception: error,
+              library: 'KORAS background voice session',
+            ),
+          );
+        }),
+      );
+    }
     super.dispose();
   }
 }

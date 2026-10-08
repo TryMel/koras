@@ -16,8 +16,10 @@ import com.koras.koras_mobile.tools.PhoneTool
 import com.koras.koras_mobile.tools.SmsTool
 import androidx.fragment.app.FragmentActivity
 import io.flutter.plugin.common.BinaryMessenger
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import com.koras.koras_mobile.tools.KorasVoiceSessionService
 
 /**
  * Section 10.1 & 12 — Registry des canaux de communication Flutter <-> Kotlin.
@@ -30,6 +32,7 @@ class MethodChannelRegistry(
     MethodChannel.MethodCallHandler {
 
     private val methodChannel = MethodChannel(messenger, "com.koras.koras_mobile/methods")
+    private val eventChannel = EventChannel(messenger, "com.koras.koras_mobile/events")
     private val accessibilityChannel = MethodChannel(messenger, "com.koras.koras_mobile/accessibility")
     private val audioChannel = MethodChannel(messenger, "com.koras.koras_mobile/audio")
 
@@ -42,6 +45,15 @@ class MethodChannelRegistry(
 
     init {
         methodChannel.setMethodCallHandler(this)
+        eventChannel.setStreamHandler(object : EventChannel.StreamHandler {
+            override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                backgroundEventSink = events
+            }
+
+            override fun onCancel(arguments: Any?) {
+                backgroundEventSink = null
+            }
+        })
         accessibilityChannel.setMethodCallHandler { call, result ->
             handleAccessibilityCall(call, result)
         }
@@ -95,6 +107,26 @@ class MethodChannelRegistry(
             }
             "getDeviceInfo" -> {
                 result.success(deviceTool.getDeviceInfo())
+            }
+            "startBackgroundVoiceSession" -> {
+                try {
+                    ContextCompat.startForegroundService(
+                        context,
+                        Intent(context, KorasVoiceSessionService::class.java)
+                    )
+                    result.success(true)
+                } catch (error: Exception) {
+                    result.error(
+                        "VOICE_SESSION_START_FAILED",
+                        error.message ?: "Impossible de démarrer le service vocal.",
+                        null
+                    )
+                }
+            }
+            "stopBackgroundVoiceSession" -> {
+                result.success(context.stopService(
+                    Intent(context, KorasVoiceSessionService::class.java)
+                ))
             }
             "isAccessibilityServiceConnected" -> {
                 result.success(KorasAccessibilityService.isRunning())
@@ -201,6 +233,15 @@ class MethodChannelRegistry(
                 result.success(true)
             }
             else -> result.notImplemented()
+        }
+    }
+
+    companion object {
+        @Volatile
+        private var backgroundEventSink: EventChannel.EventSink? = null
+
+        fun emitBackgroundSessionStopped() {
+            backgroundEventSink?.success(mapOf("type" to "voice_session_stopped"))
         }
     }
 }
