@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../../../core/config/app_config.dart';
 import '../../../domain/repositories/auth_repository.dart';
 
 class AuthScreen extends StatefulWidget {
@@ -30,7 +31,19 @@ class _AuthScreenState extends State<AuthScreen> {
       }
       if (mounted) context.go('/home');
     } on DioException catch (error) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.response?.data['detail']?.toString() ?? 'Connexion impossible.')));
+      final responseData = error.response?.data;
+      final detail = responseData is Map
+          ? responseData['detail'] ?? responseData['message']
+          : null;
+      final message = detail?.toString().trim();
+      final errorMessage = error.type == DioExceptionType.cancel
+          ? 'Connexion annulée.'
+          : message != null && message.isNotEmpty
+              ? message
+              : error.response == null
+                  ? 'Serveur KORAS inaccessible sur ${AppConfig.baseUrl}. Vérifiez que le backend fonctionne et que cette adresse est joignable par le téléphone.'
+                  : 'Le serveur KORAS a répondu avec une erreur (HTTP ${error.response?.statusCode ?? 'inconnu'}).';
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorMessage)));
     } finally { if (mounted) setState(() => _loading = false); }
   }
 

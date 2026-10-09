@@ -17,10 +17,18 @@ if sys.platform == "win32":
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 def run_backend():
-    print("[*] Démarrage du backend FastAPI KORAS sur http://127.0.0.1:8000 ...")
     env = os.environ.copy()
     backend_dir = os.path.join(os.path.dirname(__file__), "backend")
-    cmd = [sys.executable, "-m", "uvicorn", "app.main:app", "--reload", "--port", "8000", "--host", "0.0.0.0"]
+    host = env.get("KORAS_HOST", "127.0.0.1")
+    try:
+        port = int(env.get("KORAS_PORT", "8000"))
+    except ValueError:
+        raise SystemExit("KORAS_PORT doit être un numéro de port entier.")
+    if not 1 <= port <= 65535:
+        raise SystemExit("KORAS_PORT doit être compris entre 1 et 65535.")
+
+    print(f"[*] Démarrage du backend FastAPI KORAS sur http://{host}:{port} ...")
+    cmd = [sys.executable, "-m", "uvicorn", "app.main:app", "--reload", "--port", str(port), "--host", host]
     raise SystemExit(subprocess.run(cmd, cwd=backend_dir, env=env).returncode)
 
 def run_mcp():

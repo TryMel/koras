@@ -1,8 +1,9 @@
 # Couverture MVP KORAS
 
-Ce document suit strictement la section 4.1 du CDC. Une capacité n’est marquée
-comme exécutée que lorsqu’elle passe par un connecteur Android ou une API réelle;
-aucun résultat n’est simulé par le backend.
+Ce document décrit les capacités présentes dans le code, pas une certification
+ni la validation E2E de chaque parcours. Les tests API automatisés emploient
+FastAPI `TestClient`; leur résultat ne prouve pas qu'une action a été exécutée
+sur un téléphone.
 
 | Exigence MVP | Implémentation |
 | --- | --- |
@@ -37,16 +38,32 @@ aucun résultat n’est simulé par le backend.
 
 ## Validation automatisée
 
-- `tests/backend`: 29 tests passent, dont les parcours API inscription/session,
-  appareil approuvé, exécution confirmée, résultat observé, historique et
-  révocation, ainsi que les refus des opérations financières et les réponses MCP.
-- Le portail admin passe `npm run build`; `npm audit --omit=dev` ne signale
-  aucune vulnérabilité après mise à jour de PostCSS.
-- Les parcours API utilisent FastAPI `TestClient`. Les résultats Android dans
-  ces tests sont des observations de test, pas la preuve d'une exécution sur un
-  téléphone. Les permissions Android, les intents et les services
-  d'accessibilité/notifications nécessitent encore une validation sur appareil
-  ou émulateur.
-- `mobile/flutter/test/widget_test.dart` couvre le démarrage UI, la commande de
-  session vocale et l’affichage des confirmations sensibles; ces tests ne
-  remplacent pas un essai d’écoute en arrière-plan sur un appareil Android.
+- `python .\run_koras.py test` : 29 tests backend réussis lors de la dernière
+  validation, couvrant l'agent, les routes API, l'authentification, les
+  autorisations, le registre d'outils et le serveur MCP.
+- `flutter test` : 3 tests widget réussis lors de la dernière validation.
+- `flutter analyze` sur le client API et l'écran d'authentification : aucune
+  erreur ni avertissement lors de la dernière validation.
+- APK release ARM64 compilé avec l'URL locale `http://127.0.0.1:8016/api/v1`,
+  installé par mise à jour et lancé sur un téléphone Samsung connecté en USB.
+- Aucun E2E complet ni test de connexion utilisateur n'est déduit de ces
+  résultats. Les permissions, intents, accès réseau depuis un téléphone,
+  reconnaissance vocale en arrière-plan et actions Android doivent être
+  vérifiés séparément sur un appareil.
+- Un téléphone connecté en USB a reçu une réponse HTTP `200` de `/health` au
+  travers d'un tunnel ADB vers l'API locale; cela valide le tunnel et la
+  disponibilité de l'API, mais pas la connexion dans l'application ni
+  l'inscription d'un utilisateur.
+- Le portail admin et Docker Compose ne font pas partie de cette validation;
+  leur démarrage et leur déploiement ne sont pas garantis par les résultats
+  ci-dessus.
+
+## Configuration réseau mobile
+
+- Le défaut Android `10.0.2.2:8000` est destiné à l'émulateur, pas à un
+  téléphone physique.
+- Un téléphone Android connecté au PC par ADB peut accéder à un backend local
+  via `adb reverse`; voir [le guide mobile](../mobile/flutter/README.md).
+- Le dépôt ne publie pas de backend KORAS ni de compte de démonstration. Une
+  utilisation sans tunnel local nécessite un backend déployé et une URL
+  accessible configurée par l'utilisateur.
